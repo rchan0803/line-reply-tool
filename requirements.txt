@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+python-dotenv
+anthropic
+gspread
+google-auth
+httpx
+jinja2
+python-multipart
