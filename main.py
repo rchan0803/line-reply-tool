@@ -59,6 +59,15 @@ def get_line_profile(user_id: str) -> str:
 
 # ─── LINE Webhook ──────────────────────────────────────────────
 
+async def forward_to_elme(body: bytes, headers: dict):
+    elme_url = os.getenv("ELME_WEBHOOK_URL", "https://cb.lmes.jp/line/callback/add/148826")
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            await client.post(elme_url, content=body, headers=headers)
+    except Exception as e:
+        print(f"[elme] 転送エラー: {e}")
+
+
 @app.post("/webhook")
 async def webhook(request: Request):
     body = await request.body()
@@ -66,6 +75,13 @@ async def webhook(request: Request):
 
     if not verify_line_signature(body, signature):
         raise HTTPException(status_code=400, detail="Invalid signature")
+
+    # エルメに転送
+    forward_headers = {
+        "Content-Type": "application/json",
+        "X-Line-Signature": signature,
+    }
+    await forward_to_elme(body, forward_headers)
 
     data = json.loads(body)
     for event in data.get("events", []):
