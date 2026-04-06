@@ -7,9 +7,15 @@ _cache_loaded: bool = False
 
 
 def _get_client():
-    creds_file = os.getenv("GOOGLE_CREDENTIALS_FILE", "credentials.json")
     scopes = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
-    creds = Credentials.from_service_account_file(creds_file, scopes=scopes)
+    creds_json = os.getenv("GOOGLE_CREDENTIALS_JSON")
+    if creds_json:
+        import json
+        info = json.loads(creds_json)
+        creds = Credentials.from_service_account_info(info, scopes=scopes)
+    else:
+        creds_file = os.getenv("GOOGLE_CREDENTIALS_FILE", "credentials.json")
+        creds = Credentials.from_service_account_file(creds_file, scopes=scopes)
     return gspread.authorize(creds)
 
 
