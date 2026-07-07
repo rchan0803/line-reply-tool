@@ -2,8 +2,8 @@ import os
 import gspread
 from google.oauth2.service_account import Credentials
 
-_manual_cache: str = ""
-_cache_loaded: bool = False
+# アカウントごとのマニュアル本文キャッシュ { account_id: text }
+_manual_cache: dict = {}
 
 
 def _get_client():
@@ -19,34 +19,43 @@ def _get_client():
     return gspread.authorize(creds)
 
 
-def load_manual() -> str:
-    global _manual_cache, _cache_loaded
+def load_manuals(account_sheets: dict) -> dict:
+    """スプレッドシートを読み込み、アカウントごとに参照シートを振り分ける。
+
+    account_sheets: { account_id: [シート名, ...] }
+    戻り値: { account_id: 文字数 }
+    """
+    global _manual_cache
     sheet_id = os.getenv("GOOGLE_SHEET_ID", "")
     if not sheet_id:
-        return ""
+        return {}
     try:
         client = _get_client()
         spreadsheet = client.open_by_key(sheet_id)
-        lines = []
+        contents = {}
         for sheet in spreadsheet.worksheets():
             if sheet.title.endswith("_bk"):  # バックアップ用シートは読み込まない
                 continue
             rows = sheet.get_all_values()
-            if not rows:
-                continue
-            lines.append(f"=== {sheet.title} ===")
+            lines = [f"=== {sheet.title} ==="]
             for row in rows:
                 row_text = " | ".join(cell.strip() for cell in row if cell.strip())
                 if row_text:
                     lines.append(row_text)
-        _manual_cache = "\n".join(lines)
-        _cache_loaded = True
+            contents[sheet.title] = "\n".join(lines)
+
+        new_cache = {}
+        for account, sheet_names in account_sheets.items():
+            parts = [contents[name] for name in sheet_names if name in contents]
+            missing = [name for name in sheet_names if name not in contents]
+            if missing:
+                print(f"[sheets] {account}: シートが見つかりません: {missing}")
+            new_cache[account] = "\n\n".join(parts)
+        _manual_cache = new_cache
     except Exception as e:
         print(f"[sheets] マニュアル読み込みエラー: {e}")
-        if not _cache_loaded:
-            _manual_cache = ""
-    return _manual_cache
+    return {account: len(text) for account, text in _manual_cache.items()}
 
 
-def get_manual_content() -> str:
-    return _manual_cache
+def get_manual_content(account: str = "main") -> str:
+    return _manual_cache.get(account, "")

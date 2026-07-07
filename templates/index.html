@@ -18,6 +18,21 @@
     flex-shrink: 0;
   }
   header h1 { font-size: 18px; font-weight: bold; }
+  .header-left { display: flex; align-items: center; gap: 20px; }
+  .account-tabs { display: flex; gap: 6px; }
+  .account-tab {
+    background: rgba(255,255,255,0.25);
+    color: white;
+    border: none;
+    border-radius: 16px;
+    padding: 6px 16px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: bold;
+  }
+  .account-tab:hover { background: rgba(255,255,255,0.4); }
+  .account-tab.active { background: white; color: #00b900; }
+  .account-tab.unconfigured { opacity: 0.55; }
   header button {
     background: white;
     color: #00b900;
@@ -233,7 +248,10 @@
 <body>
 
 <header>
-  <h1>LINE 返信案ツール</h1>
+  <div class="header-left">
+    <h1>LINE 返信案ツール</h1>
+    <div class="account-tabs" id="account-tabs"></div>
+  </div>
   <button onclick="reloadManual()">マニュアル再読み込み</button>
 </header>
 
@@ -285,9 +303,43 @@
 <script>
 let currentUserId = null;
 let currentName = '';
+let currentAccount = 'main';
 let draftEdited = false;
 let refreshTimer = null;
 let searchTimer = null;
+
+// ── アカウント切り替え ─────────────────────────
+
+async function loadAccounts() {
+  const res = await fetch('/api/accounts');
+  const accounts = await res.json();
+  document.getElementById('account-tabs').innerHTML = accounts.map(a => `
+    <button class="account-tab ${a.id === currentAccount ? 'active' : ''} ${a.configured ? '' : 'unconfigured'}"
+            onclick="switchAccount('${a.id}')">${a.label}${a.configured ? '' : '（未接続）'}</button>
+  `).join('');
+}
+
+function switchAccount(accountId) {
+  if (accountId === currentAccount) return;
+  currentAccount = accountId;
+  currentUserId = null;
+  currentName = '';
+  draftEdited = false;
+  if (refreshTimer) clearInterval(refreshTimer);
+  document.getElementById('chat-header-name').textContent = '←左から会話を選択してください';
+  document.getElementById('call-name-box').style.display = 'none';
+  document.getElementById('messages-area').innerHTML = '';
+  document.getElementById('search-input').value = '';
+  const ta = document.getElementById('draft-text');
+  ta.value = '';
+  document.getElementById('draft-time').textContent = '';
+  document.getElementById('instruction').value = '';
+  ['draft-text', 'copy-btn', 'regen-btn', 'instruction', 'fix-btn'].forEach(id => {
+    document.getElementById(id).disabled = true;
+  });
+  loadAccounts();
+  loadConversations();
+}
 
 function formatTime(iso) {
   if (!iso) return '';
@@ -316,7 +368,9 @@ function onSearchInput() {
 
 async function loadConversations() {
   const q = document.getElementById('search-input').value.trim();
-  const url = q ? `/api/search?q=${encodeURIComponent(q)}` : '/api/conversations';
+  const url = q
+    ? `/api/search?q=${encodeURIComponent(q)}&account=${currentAccount}`
+    : `/api/conversations?account=${currentAccount}`;
   const res = await fetch(url);
   const convs = await res.json();
   const list = document.getElementById('conv-list');
@@ -492,6 +546,7 @@ function showToast(msg) {
 }
 
 // 初回ロード
+loadAccounts();
 loadConversations();
 setInterval(loadConversations, 15000);
 </script>
