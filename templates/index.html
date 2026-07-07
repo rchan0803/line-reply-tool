@@ -135,8 +135,12 @@
     white-space: pre-wrap;
     word-break: break-word;
     margin-bottom: 10px;
-    min-height: 60px;
+    min-height: 90px;
+    width: 100%;
+    resize: vertical;
+    font-family: inherit;
   }
+  .draft-text:focus { outline: 2px solid #00b900; border-color: #00b900; }
   .draft-actions { display: flex; gap: 10px; }
   .btn {
     padding: 8px 18px;
@@ -204,6 +208,7 @@
 <script>
 let currentUserId = null;
 let refreshTimer = null;
+let draftEdited = false;
 
 function formatTime(iso) {
   if (!iso) return '';
@@ -260,8 +265,17 @@ async function loadChat(userId, displayName) {
     </div>
   `).join('');
 
-  const draftContent = data.draft ? data.draft.content : '（返信案なし）';
+  const draftContent = data.draft ? data.draft.content : '';
   const draftTime = data.draft ? `生成: ${formatTime(data.draft.created_at)}` : '';
+
+  // 編集中はメッセージ一覧だけ更新して、入力内容を消さない
+  const existingTa = document.getElementById('draft-text');
+  const editing = existingTa && (draftEdited || document.activeElement === existingTa);
+  if (editing && currentUserId === userId && document.getElementById('messages-area')) {
+    document.getElementById('messages-area').innerHTML =
+      messagesHtml || '<div style="color:#bbb;text-align:center;margin-top:40px">メッセージなし</div>';
+    return;
+  }
 
   panel.innerHTML = `
     <div class="chat-header">
@@ -272,16 +286,17 @@ async function loadChat(userId, displayName) {
     </div>
     <div class="draft-panel">
       <div class="draft-label">
-        返信案
+        返信案（編集できます）
         <span id="draft-time">${draftTime}</span>
       </div>
-      <div class="draft-text" id="draft-text">${escapeHtml(draftContent)}</div>
+      <textarea class="draft-text" id="draft-text" placeholder="（返信案なし）" oninput="draftEdited = true">${escapeHtml(draftContent)}</textarea>
       <div class="draft-actions">
-        <button class="btn btn-copy" onclick="copyDraft()">コピー</button>
+        <button class="btn btn-copy" onclick="copyDraft()">コピー（エルメに貼り付けて送信）</button>
         <button class="btn btn-regen" id="regen-btn" onclick="regenerate('${userId}', '${displayName.replace(/'/g, "\\'")}')">返信案を再生成</button>
       </div>
     </div>
   `;
+  draftEdited = false;
 
   // scroll to bottom
   const area = document.getElementById('messages-area');
@@ -298,7 +313,8 @@ async function regenerate(userId, displayName) {
   try {
     const res = await fetch(`/api/regenerate/${userId}`, { method: 'POST' });
     const data = await res.json();
-    document.getElementById('draft-text').textContent = data.draft;
+    document.getElementById('draft-text').value = data.draft;
+    draftEdited = false;
     document.getElementById('draft-time').textContent = `生成: ${formatTime(new Date().toISOString())}`;
     showToast('返信案を再生成しました');
   } catch(e) {
@@ -311,9 +327,36 @@ async function regenerate(userId, displayName) {
 }
 
 function copyDraft() {
-  const text = document.getElementById('draft-text')?.textContent;
-  if (!text || text === '（返信案なし）') return;
+  const text = document.getElementById('draft-text')?.value;
+  if (!text) return;
   navigator.clipboard.writeText(text).then(() => showToast('コピーしました'));
+}
+
+async function sendDraft(userId, displayName) {
+  const ta = document.getElementById('draft-text');
+  const text = (ta?.value || '').trim();
+  if (!text) { showToast('送信内容が空です'); return; }
+  if (!confirm('この内容でLINEに送信します。よろしいですか？')) return;
+
+  const btn = document.getElementById('send-btn');
+  btn.disabled = true;
+  btn.textContent = '送信中...';
+
+  try {
+    const res = await fetch(`/api/send/${userId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }),
+    });
+    if (!res.ok) throw new Error('send failed');
+    draftEdited = false;
+    showToast('送信しました');
+    await loadChat(userId, displayName);
+  } catch (e) {
+    showToast('送信に失敗しました');
+    btn.disabled = false;
+    btn.textContent = 'LINEに送信';
+  }
 }
 
 async function reloadManual() {

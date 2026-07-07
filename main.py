@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 
 import httpx
 from fastapi import FastAPI, Request, HTTPException
+from pydantic import BaseModel
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from dotenv import load_dotenv
@@ -31,6 +32,34 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+
+
+# ─── Basic認証（/webhook 以外を保護） ─────────────────────────
+
+@app.middleware("http")
+async def basic_auth_middleware(request: Request, call_next):
+    import secrets as _secrets
+    from fastapi.responses import Response as PlainResponse
+
+    admin_password = os.getenv("ADMIN_PASSWORD", "")
+    # /webhook はLINEからの通知用なので認証不要（署名検証で保護済み）
+    if request.url.path == "/webhook" or not admin_password:
+        return await call_next(request)
+
+    auth = request.headers.get("Authorization", "")
+    if auth.startswith("Basic "):
+        try:
+            decoded = base64.b64decode(auth[6:]).decode()
+            _, _, password = decoded.partition(":")
+            if _secrets.compare_digest(password, admin_password):
+                return await call_next(request)
+        except Exception:
+            pass
+
+    return PlainResponse(
+        status_code=401,
+        headers={"WWW-Authenticate": 'Basic realm="line-reply-tool"'},
+    )
 
 
 # ─── Utilities ────────────────────────────────────────────────
@@ -132,6 +161,34 @@ async def api_regenerate(user_id: str):
     draft = generate_reply(history, manual)
     save_draft(user_id, draft)
     return {"draft": draft}
+
+
+class SendRequest(BaseModel):
+    text: str
+
+
+@app.post("/api/send/{user_id}")
+async def api_send(user_id: str, req: SendRequest):
+    text = req.text.strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="メッセージが空です")
+
+    token = os.getenv("LINE_CHANNEL_ACCESS_TOKEN", "")
+    async with httpx.AsyncClient(timeout=10) as client:
+        resp = await client.post(
+            "https://api.line.me/v2/bot/message/push",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+            },
+            json={"to": user_id, "messages": [{"type": "text", "text": text}]},
+        )
+
+    if resp.status_code != 200:
+        raise HTTPException(status_code=502, detail=f"LINE送信エラー: {resp.text}")
+
+    save_message(user_id, "outbound", text)
+    return {"status": "ok"}
 
 
 @app.post("/api/reload-manual")

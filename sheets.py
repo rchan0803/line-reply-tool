@@ -29,6 +29,8 @@ def load_manual() -> str:
         spreadsheet = client.open_by_key(sheet_id)
         lines = []
         for sheet in spreadsheet.worksheets():
+            if sheet.title.endswith("_bk"):  # バックアップ用シートは読み込まない
+                continue
             rows = sheet.get_all_values()
             if not rows:
                 continue
