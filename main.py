@@ -72,6 +72,14 @@ def verify_line_signature(body: bytes, signature: str) -> bool:
     return hmac.compare_digest(expected, signature)
 
 
+def get_manual_or_reload() -> str:
+    """マニュアルが未読み込み（起動時の読み込み失敗など）なら読み直す。"""
+    manual = get_manual_content()
+    if not manual:
+        manual = load_manual()
+    return manual
+
+
 def get_line_profile(user_id: str) -> str:
     token = os.getenv("LINE_CHANNEL_ACCESS_TOKEN", "")
     try:
@@ -132,7 +140,7 @@ async def webhook(request: Request):
 
         # 返信案を生成して保存
         history = get_messages(user_id)
-        manual = get_manual_content()
+        manual = get_manual_or_reload()
         draft = generate_reply(history, manual, customer_name=display_name)
         save_draft(user_id, draft)
 
@@ -166,7 +174,7 @@ async def api_regenerate(user_id: str):
     history = get_messages(user_id)
     if not history:
         raise HTTPException(status_code=404, detail="No messages found")
-    manual = get_manual_content()
+    manual = get_manual_or_reload()
     user = get_user(user_id)
     display_name = user["display_name"] if user else ""
     draft = generate_reply(history, manual, customer_name=display_name)
@@ -189,7 +197,7 @@ async def api_refine(user_id: str, req: RefineRequest):
     if not history:
         raise HTTPException(status_code=404, detail="No messages found")
 
-    manual = get_manual_content()
+    manual = get_manual_or_reload()
     user = get_user(user_id)
     display_name = user["display_name"] if user else ""
     draft = refine_reply(history, manual, display_name, req.draft, instruction)
@@ -223,6 +231,19 @@ async def api_send(user_id: str, req: SendRequest):
 
     save_message(user_id, "outbound", text)
     return {"status": "ok"}
+
+
+@app.get("/api/health")
+async def api_health():
+    db_path = os.getenv("DB_PATH", "line_chat.db")
+    data_dir = os.path.dirname(db_path) or "."
+    return {
+        "db_path": db_path,
+        "db_exists": os.path.exists(db_path),
+        "data_dir_exists": os.path.isdir(data_dir),
+        "data_dir_files": os.listdir(data_dir) if os.path.isdir(data_dir) else [],
+        "manual_chars": len(get_manual_content()),
+    }
 
 
 @app.post("/api/reload-manual")
