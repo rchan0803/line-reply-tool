@@ -54,9 +54,10 @@ def generate_reply(messages: list[dict], manual: str, customer_name: str = "") -
         system.append({
             "type": "text",
             "text": (
-                f"この顧客のLINE表示名は「{customer_name}」です。"
+                f"この顧客の呼び名は「{customer_name}」です。"
                 f"呼びかけには「{customer_name}様」のように使ってください。"
-                "表示名が記号やニックネームで呼びかけに不自然な場合は、名前を使わない自然な文面にしてください。"
+                "ただし、会話の中で顧客の本名や希望する呼び名が判明している場合は、そちらを優先してください。"
+                "呼び名が記号やニックネームで呼びかけに不自然な場合は、名前を使わない自然な文面にしてください。"
             ),
         })
 

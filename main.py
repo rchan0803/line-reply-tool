@@ -17,7 +17,7 @@ load_dotenv()
 from database import (
     init_db, upsert_user, save_message, save_draft,
     get_conversations, get_messages, get_latest_draft, get_user,
-    search_conversations,
+    search_conversations, set_call_name,
 )
 from sheets import load_manual, get_manual_content
 from claude_service import generate_reply, refine_reply
@@ -70,6 +70,14 @@ def verify_line_signature(body: bytes, signature: str) -> bool:
     digest = hmac.new(secret.encode(), body, hashlib.sha256).digest()
     expected = base64.b64encode(digest).decode()
     return hmac.compare_digest(expected, signature)
+
+
+def preferred_name(user_id: str) -> str:
+    """呼び名（設定済みならそれ、なければLINE表示名）を返す。"""
+    user = get_user(user_id)
+    if not user:
+        return ""
+    return user.get("call_name") or user.get("display_name") or ""
 
 
 def get_manual_or_reload() -> str:
@@ -141,7 +149,7 @@ async def webhook(request: Request):
         # 返信案を生成して保存
         history = get_messages(user_id)
         manual = get_manual_or_reload()
-        draft = generate_reply(history, manual, customer_name=display_name)
+        draft = generate_reply(history, manual, customer_name=preferred_name(user_id))
         save_draft(user_id, draft)
 
     return {"status": "ok"}
@@ -166,7 +174,20 @@ async def api_search(q: str = ""):
 async def api_messages(user_id: str):
     messages = get_messages(user_id)
     draft = get_latest_draft(user_id)
-    return {"messages": messages, "draft": draft}
+    user = get_user(user_id)
+    return {"messages": messages, "draft": draft, "user": user}
+
+
+class CallNameRequest(BaseModel):
+    name: str
+
+
+@app.post("/api/call-name/{user_id}")
+async def api_call_name(user_id: str, req: CallNameRequest):
+    if not get_user(user_id):
+        raise HTTPException(status_code=404, detail="User not found")
+    set_call_name(user_id, req.name)
+    return {"status": "ok", "call_name": req.name.strip()}
 
 
 @app.post("/api/regenerate/{user_id}")
@@ -175,9 +196,7 @@ async def api_regenerate(user_id: str):
     if not history:
         raise HTTPException(status_code=404, detail="No messages found")
     manual = get_manual_or_reload()
-    user = get_user(user_id)
-    display_name = user["display_name"] if user else ""
-    draft = generate_reply(history, manual, customer_name=display_name)
+    draft = generate_reply(history, manual, customer_name=preferred_name(user_id))
     save_draft(user_id, draft)
     return {"draft": draft}
 
@@ -198,9 +217,7 @@ async def api_refine(user_id: str, req: RefineRequest):
         raise HTTPException(status_code=404, detail="No messages found")
 
     manual = get_manual_or_reload()
-    user = get_user(user_id)
-    display_name = user["display_name"] if user else ""
-    draft = refine_reply(history, manual, display_name, req.draft, instruction)
+    draft = refine_reply(history, manual, preferred_name(user_id), req.draft, instruction)
     save_draft(user_id, draft)
     return {"draft": draft}
 

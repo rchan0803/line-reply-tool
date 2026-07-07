@@ -74,13 +74,38 @@
     min-width: 320px;
   }
   .chat-header {
-    padding: 14px 20px;
+    padding: 10px 20px;
     background: white;
     border-bottom: 1px solid #e0e0e0;
     font-weight: bold;
     font-size: 15px;
     flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    min-height: 52px;
   }
+  .call-name-box { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #666; font-weight: normal; }
+  .call-name-box input {
+    width: 160px;
+    padding: 6px 10px;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    font-size: 13px;
+  }
+  .call-name-box input:focus { outline: 1px solid #00b900; border-color: #00b900; }
+  .btn-small {
+    padding: 6px 12px;
+    border: none;
+    border-radius: 6px;
+    background: #00b900;
+    color: white;
+    font-size: 12px;
+    font-weight: bold;
+    cursor: pointer;
+  }
+  .btn-small:hover { opacity: 0.85; }
   .chat-messages {
     flex: 1;
     overflow-y: auto;
@@ -225,7 +250,14 @@
 
   <!-- 中央：やり取り -->
   <div class="chat-panel">
-    <div class="chat-header" id="chat-header">←左から会話を選択してください</div>
+    <div class="chat-header">
+      <span id="chat-header-name">←左から会話を選択してください</span>
+      <span class="call-name-box" id="call-name-box" style="display:none;">
+        呼び名:
+        <input id="call-name-input" placeholder="本名を設定（例：山田花子）">
+        <button class="btn-small" onclick="saveCallName()">保存</button>
+      </span>
+    </div>
     <div class="chat-messages" id="messages-area"></div>
   </div>
 
@@ -292,14 +324,18 @@ async function loadConversations() {
     list.innerHTML = `<div class="empty-state">${q ? '該当する会話がありません' : 'まだメッセージがありません'}</div>`;
     return;
   }
-  list.innerHTML = convs.map(c => `
+  list.innerHTML = convs.map(c => {
+    const label = c.call_name
+      ? `${c.call_name}（${c.display_name || c.user_id}）`
+      : (c.display_name || c.user_id);
+    return `
     <div class="conv-item ${c.user_id === currentUserId ? 'active' : ''}"
-         onclick="selectConv('${c.user_id}', '${escapeHtml(c.display_name || c.user_id).replace(/'/g, "\\'")}')">
-      <div class="conv-name">${escapeHtml(c.display_name || c.user_id)}</div>
+         onclick="selectConv('${c.user_id}', '${escapeHtml(label).replace(/'/g, "\\'")}')">
+      <div class="conv-name">${escapeHtml(label)}</div>
       <div class="conv-preview">${c.last_message ? escapeHtml(c.last_message.slice(0, 40)) : ''}</div>
       <div class="conv-time">${formatTime(c.last_at)}</div>
     </div>
-  `).join('');
+  `;}).join('');
 }
 
 // ── 会話表示 ─────────────────────────────────
@@ -308,13 +344,32 @@ async function selectConv(userId, displayName) {
   currentUserId = userId;
   currentName = displayName;
   draftEdited = false;
-  document.getElementById('chat-header').textContent = displayName;
+  document.getElementById('chat-header-name').textContent = displayName;
+  document.getElementById('call-name-box').style.display = 'flex';
+  document.getElementById('call-name-input').value = '';
   ['draft-text', 'copy-btn', 'regen-btn', 'instruction', 'fix-btn'].forEach(id => {
     document.getElementById(id).disabled = false;
   });
   await loadConversations();
   await loadChat(true);
   startAutoRefresh();
+}
+
+async function saveCallName() {
+  if (!currentUserId) return;
+  const name = document.getElementById('call-name-input').value.trim();
+  try {
+    const res = await fetch(`/api/call-name/${currentUserId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    });
+    if (!res.ok) throw new Error();
+    showToast(name ? `呼び名を「${name}」に設定しました。「再生成」で反映されます` : '呼び名を削除しました');
+    await loadConversations();
+  } catch (e) {
+    showToast('エラーが発生しました');
+  }
 }
 
 function startAutoRefresh() {
@@ -349,6 +404,12 @@ async function loadChat(force) {
     draftEdited = false;
     document.getElementById('draft-time').textContent =
       data.draft ? `生成: ${formatTime(data.draft.created_at)}` : '';
+  }
+
+  // 呼び名欄（入力中でなければ最新化）
+  const cn = document.getElementById('call-name-input');
+  if (data.user && document.activeElement !== cn) {
+    cn.value = data.user.call_name || '';
   }
 }
 

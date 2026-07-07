@@ -35,6 +35,20 @@ def init_db():
             created_at TEXT NOT NULL
         );
     """)
+    # 既存DBへの呼び名カラム追加（なければ）
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(users)").fetchall()]
+    if "call_name" not in cols:
+        conn.execute("ALTER TABLE users ADD COLUMN call_name TEXT")
+    conn.commit()
+    conn.close()
+
+
+def set_call_name(user_id: str, call_name: str):
+    conn = get_conn()
+    conn.execute(
+        "UPDATE users SET call_name = ? WHERE user_id = ?",
+        (call_name.strip(), user_id),
+    )
     conn.commit()
     conn.close()
 
@@ -76,7 +90,7 @@ def save_draft(user_id: str, content: str):
 def get_conversations():
     conn = get_conn()
     rows = conn.execute("""
-        SELECT u.user_id, u.display_name,
+        SELECT u.user_id, u.display_name, u.call_name,
                m.content AS last_message, m.created_at AS last_at
         FROM users u
         LEFT JOIN messages m ON m.id = (
@@ -113,16 +127,17 @@ def search_conversations(query: str):
     like = f"%{query}%"
     conn = get_conn()
     rows = conn.execute("""
-        SELECT u.user_id, u.display_name,
+        SELECT u.user_id, u.display_name, u.call_name,
                m.content AS last_message, m.created_at AS last_at
         FROM users u
         LEFT JOIN messages m ON m.id = (
             SELECT id FROM messages WHERE user_id = u.user_id ORDER BY id DESC LIMIT 1
         )
         WHERE u.display_name LIKE ?
+           OR u.call_name LIKE ?
            OR u.user_id IN (SELECT DISTINCT user_id FROM messages WHERE content LIKE ?)
         ORDER BY last_at DESC
-    """, (like, like)).fetchall()
+    """, (like, like, like)).fetchall()
     conn.close()
     return [dict(r) for r in rows]
 
