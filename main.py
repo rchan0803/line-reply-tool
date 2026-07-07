@@ -245,6 +245,28 @@ async def api_regenerate(user_id: str):
     return {"draft": draft}
 
 
+class MarkSentRequest(BaseModel):
+    text: str
+
+
+@app.post("/api/mark-sent/{user_id}")
+async def api_mark_sent(user_id: str, req: MarkSentRequest):
+    """コピーされた返信文を「送信済み」として会話履歴に記録する。"""
+    text = req.text.strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="本文が空です")
+    if not get_user(user_id):
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # 同じ内容を連続コピーした場合は二重記録しない
+    history = get_messages(user_id)
+    if history and history[-1]["direction"] == "outbound" and history[-1]["content"] == text:
+        return {"status": "duplicate"}
+
+    save_message(user_id, "outbound", text)
+    return {"status": "ok"}
+
+
 class RefineRequest(BaseModel):
     instruction: str
     draft: str

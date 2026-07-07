@@ -1,8 +1,13 @@
 import sqlite3
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 
 DB_PATH = os.getenv("DB_PATH", "line_chat.db")
+
+
+def now_iso() -> str:
+    """タイムゾーン付きUTC時刻。ブラウザ側で閲覧者の現地時間（日本時間）に変換される。"""
+    return datetime.now(timezone.utc).isoformat()
 
 
 def get_conn():
@@ -41,6 +46,12 @@ def init_db():
         conn.execute("ALTER TABLE users ADD COLUMN call_name TEXT")
     if "account" not in cols:
         conn.execute("ALTER TABLE users ADD COLUMN account TEXT DEFAULT 'main'")
+    # 過去のタイムゾーンなし時刻（UTCで保存されていた）に +00:00 を付与
+    for table, col in (("messages", "created_at"), ("drafts", "created_at"), ("users", "updated_at")):
+        conn.execute(
+            f"UPDATE {table} SET {col} = {col} || '+00:00'"
+            f" WHERE {col} IS NOT NULL AND {col} NOT LIKE '%+%' AND {col} NOT LIKE '%Z'"
+        )
     conn.commit()
     conn.close()
 
@@ -57,7 +68,7 @@ def set_call_name(user_id: str, call_name: str):
 
 def upsert_user(user_id: str, display_name: str, account: str = "main"):
     conn = get_conn()
-    now = datetime.now().isoformat()
+    now = now_iso()
     conn.execute(
         "INSERT INTO users (user_id, display_name, updated_at, account) VALUES (?, ?, ?, ?)"
         " ON CONFLICT(user_id) DO UPDATE SET display_name=excluded.display_name,"
@@ -70,7 +81,7 @@ def upsert_user(user_id: str, display_name: str, account: str = "main"):
 
 def save_message(user_id: str, direction: str, content: str):
     conn = get_conn()
-    now = datetime.now().isoformat()
+    now = now_iso()
     conn.execute(
         "INSERT INTO messages (user_id, direction, content, created_at) VALUES (?, ?, ?, ?)",
         (user_id, direction, content, now),
@@ -81,7 +92,7 @@ def save_message(user_id: str, direction: str, content: str):
 
 def save_draft(user_id: str, content: str):
     conn = get_conn()
-    now = datetime.now().isoformat()
+    now = now_iso()
     conn.execute(
         "INSERT INTO drafts (user_id, content, created_at) VALUES (?, ?, ?)",
         (user_id, content, now),
