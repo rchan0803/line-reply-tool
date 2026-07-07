@@ -469,29 +469,11 @@ async function loadChat(force) {
 
 // ── ボタン操作 ─────────────────────────────────
 
-async function copyDraft() {
+function copyDraft() {
   const text = document.getElementById('draft-text').value;
   if (!text) { showToast('コピーする返信案がありません'); return; }
   if (text.startsWith('【返信不要】')) { showToast('この内容は送信用ではありません'); return; }
-  await navigator.clipboard.writeText(text);
-  // コピー＝エルメから送信する運用なので、送信済みとして履歴に記録する
-  try {
-    const res = await fetch(`/api/mark-sent/${currentUserId}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text }),
-    });
-    const data = await res.json();
-    if (data.status === 'ok') {
-      showToast('コピーしました（送信済みとして履歴に記録）');
-      draftEdited = false;
-      await loadChat(false);
-    } else {
-      showToast('コピーしました（記録済み）');
-    }
-  } catch (e) {
-    showToast('コピーしました（履歴記録は失敗）');
-  }
+  navigator.clipboard.writeText(text).then(() => showToast('コピーしました'));
 }
 
 async function regenerate() {

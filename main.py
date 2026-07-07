@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 import httpx
 from fastapi import FastAPI, Request, HTTPException
 from pydantic import BaseModel
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from dotenv import load_dotenv
 
@@ -21,6 +21,7 @@ from database import (
 )
 from sheets import load_manuals, get_manual_content
 from claude_service import generate_reply, refine_reply
+import elme_mcp
 
 TEMPLATES = Jinja2Templates(directory="templates")
 
@@ -245,26 +246,58 @@ async def api_regenerate(user_id: str):
     return {"draft": draft}
 
 
-class MarkSentRequest(BaseModel):
-    text: str
+# ─── エルメMCP連携 ─────────────────────────────────────────────
+
+@app.get("/elme/connect")
+async def elme_connect(request: Request):
+    """エルメとのOAuth接続を開始（管理者がブラウザで開く）。"""
+    base = str(request.base_url).rstrip("/")
+    if base.startswith("http://") and "localhost" not in base and "127.0.0.1" not in base:
+        base = "https://" + base[len("http://"):]
+    try:
+        url = elme_mcp.start_auth(base + "/elme/callback")
+    except Exception as e:
+        return HTMLResponse(f"<h3>接続開始に失敗しました</h3><pre>{e}</pre>", status_code=500)
+    return RedirectResponse(url)
 
 
-@app.post("/api/mark-sent/{user_id}")
-async def api_mark_sent(user_id: str, req: MarkSentRequest):
-    """コピーされた返信文を「送信済み」として会話履歴に記録する。"""
-    text = req.text.strip()
-    if not text:
-        raise HTTPException(status_code=400, detail="本文が空です")
-    if not get_user(user_id):
-        raise HTTPException(status_code=404, detail="User not found")
+@app.get("/elme/callback")
+async def elme_callback(code: str = "", state: str = "", error: str = "", error_description: str = ""):
+    if error:
+        return HTMLResponse(f"<h3>エルメ連携エラー</h3><p>{error}: {error_description}</p>", status_code=400)
+    try:
+        elme_mcp.finish_auth(code, state)
+        return HTMLResponse("<h3>✅ エルメ連携が完了しました</h3><p>この画面は閉じて大丈夫です。</p>")
+    except Exception as e:
+        return HTMLResponse(f"<h3>エルメ連携に失敗しました</h3><pre>{e}</pre>", status_code=400)
 
-    # 同じ内容を連続コピーした場合は二重記録しない
-    history = get_messages(user_id)
-    if history and history[-1]["direction"] == "outbound" and history[-1]["content"] == text:
-        return {"status": "duplicate"}
 
-    save_message(user_id, "outbound", text)
-    return {"status": "ok"}
+@app.get("/api/elme/status")
+async def api_elme_status():
+    return {"connected": elme_mcp.is_connected()}
+
+
+@app.get("/api/elme/tools")
+async def api_elme_tools():
+    """エルメMCPで使えるツール一覧（連携内容の調査用）。"""
+    try:
+        return elme_mcp.list_tools()
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+class ElmeCallRequest(BaseModel):
+    name: str
+    arguments: dict = {}
+
+
+@app.post("/api/elme/call")
+async def api_elme_call(req: ElmeCallRequest):
+    """エルメMCPのツールを呼び出す（連携内容の調査用）。"""
+    try:
+        return elme_mcp.call_tool(req.name, req.arguments)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
 
 
 class RefineRequest(BaseModel):

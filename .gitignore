@@ -5,3 +5,4 @@ __pycache__/
 *.pyc
 *.png
 railway_env.txt
+elme_oauth.json
