@@ -17,9 +17,10 @@ load_dotenv()
 from database import (
     init_db, upsert_user, save_message, save_draft,
     get_conversations, get_messages, get_latest_draft, get_user,
+    search_conversations,
 )
 from sheets import load_manual, get_manual_content
-from claude_service import generate_reply
+from claude_service import generate_reply, refine_reply
 
 TEMPLATES = Jinja2Templates(directory="templates")
 
@@ -145,6 +146,14 @@ async def api_conversations():
     return get_conversations()
 
 
+@app.get("/api/search")
+async def api_search(q: str = ""):
+    q = q.strip()
+    if not q:
+        return get_conversations()
+    return search_conversations(q)
+
+
 @app.get("/api/messages/{user_id}")
 async def api_messages(user_id: str):
     messages = get_messages(user_id)
@@ -161,6 +170,29 @@ async def api_regenerate(user_id: str):
     user = get_user(user_id)
     display_name = user["display_name"] if user else ""
     draft = generate_reply(history, manual, customer_name=display_name)
+    save_draft(user_id, draft)
+    return {"draft": draft}
+
+
+class RefineRequest(BaseModel):
+    instruction: str
+    draft: str
+
+
+@app.post("/api/refine/{user_id}")
+async def api_refine(user_id: str, req: RefineRequest):
+    instruction = req.instruction.strip()
+    if not instruction:
+        raise HTTPException(status_code=400, detail="修正指示が空です")
+
+    history = get_messages(user_id)
+    if not history:
+        raise HTTPException(status_code=404, detail="No messages found")
+
+    manual = get_manual_content()
+    user = get_user(user_id)
+    display_name = user["display_name"] if user else ""
+    draft = refine_reply(history, manual, display_name, req.draft, instruction)
     save_draft(user_id, draft)
     return {"draft": draft}
 

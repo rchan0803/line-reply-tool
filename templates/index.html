@@ -15,6 +15,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
+    flex-shrink: 0;
   }
   header h1 { font-size: 18px; font-weight: bold; }
   header button {
@@ -31,21 +32,26 @@
 
   .main { display: flex; flex: 1; overflow: hidden; }
 
-  /* Left panel */
+  /* ── 左：会話一覧 ── */
   .sidebar {
-    width: 300px;
+    width: 280px;
     background: white;
     border-right: 1px solid #e0e0e0;
-    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
     flex-shrink: 0;
   }
-  .sidebar-header {
-    padding: 12px 16px;
+  .search-box { padding: 10px 12px; border-bottom: 1px solid #f0f0f0; }
+  .search-box input {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid #ddd;
+    border-radius: 18px;
     font-size: 13px;
-    color: #888;
-    border-bottom: 1px solid #f0f0f0;
-    font-weight: bold;
+    outline: none;
   }
+  .search-box input:focus { border-color: #00b900; }
+  .conv-scroll { flex: 1; overflow-y: auto; }
   .conv-item {
     padding: 14px 16px;
     border-bottom: 1px solid #f5f5f5;
@@ -59,12 +65,13 @@
   .conv-time { font-size: 11px; color: #bbb; margin-top: 4px; }
   .empty-state { padding: 40px 20px; text-align: center; color: #aaa; font-size: 14px; }
 
-  /* Right panel */
+  /* ── 中央：やり取り ── */
   .chat-panel {
     flex: 1;
     display: flex;
     flex-direction: column;
     overflow: hidden;
+    min-width: 320px;
   }
   .chat-header {
     padding: 14px 20px;
@@ -72,9 +79,7 @@
     border-bottom: 1px solid #e0e0e0;
     font-weight: bold;
     font-size: 15px;
-    display: flex;
-    align-items: center;
-    gap: 10px;
+    flex-shrink: 0;
   }
   .chat-messages {
     flex: 1;
@@ -85,11 +90,11 @@
     gap: 10px;
   }
   .msg {
-    max-width: 70%;
+    max-width: 80%;
     padding: 10px 14px;
     border-radius: 12px;
     font-size: 14px;
-    line-height: 1.5;
+    line-height: 1.6;
     white-space: pre-wrap;
     word-break: break-word;
   }
@@ -108,42 +113,47 @@
   .msg-wrapper { display: flex; flex-direction: column; }
   .msg-wrapper.inbound { align-items: flex-start; }
   .msg-wrapper.outbound { align-items: flex-end; }
+  .chat-empty { color: #bbb; text-align: center; margin-top: 60px; font-size: 14px; }
 
-  /* Draft panel */
-  .draft-panel {
+  /* ── 右：返信案パネル ── */
+  .draft-side {
+    width: 420px;
     background: white;
-    border-top: 2px solid #00b900;
-    padding: 16px 20px;
+    border-left: 2px solid #00b900;
+    display: flex;
+    flex-direction: column;
+    padding: 16px;
+    gap: 10px;
+    flex-shrink: 0;
   }
   .draft-label {
-    font-size: 12px;
+    font-size: 13px;
     font-weight: bold;
     color: #00b900;
-    margin-bottom: 8px;
     display: flex;
     align-items: center;
     justify-content: space-between;
   }
   .draft-label span { color: #888; font-weight: normal; font-size: 11px; }
-  .draft-text {
-    background: #f9fbe7;
+  #draft-text {
+    flex: 1;
+    background: #fdfced;
     border: 1px solid #e6ee9c;
     border-radius: 8px;
-    padding: 12px;
+    padding: 14px;
     font-size: 14px;
-    line-height: 1.6;
+    line-height: 1.8;
     white-space: pre-wrap;
     word-break: break-word;
-    margin-bottom: 10px;
-    min-height: 90px;
     width: 100%;
-    resize: vertical;
+    resize: none;
     font-family: inherit;
+    min-height: 200px;
   }
-  .draft-text:focus { outline: 2px solid #00b900; border-color: #00b900; }
-  .draft-actions { display: flex; gap: 10px; }
+  #draft-text:focus { outline: 2px solid #00b900; border-color: #00b900; }
+  .draft-actions { display: flex; gap: 8px; flex-shrink: 0; }
   .btn {
-    padding: 8px 18px;
+    padding: 10px 14px;
     border: none;
     border-radius: 6px;
     cursor: pointer;
@@ -153,18 +163,30 @@
   }
   .btn:hover { opacity: 0.85; }
   .btn:disabled { opacity: 0.4; cursor: not-allowed; }
-  .btn-copy { background: #00b900; color: white; }
+  .btn-copy { background: #00b900; color: white; flex: 1; }
   .btn-regen { background: #f5f5f5; color: #555; border: 1px solid #ddd; }
-  .btn-regen.loading { color: #aaa; }
 
-  .no-selection {
-    flex: 1;
+  .ai-fix {
+    border-top: 1px solid #eee;
+    padding-top: 10px;
     display: flex;
-    align-items: center;
-    justify-content: center;
-    color: #bbb;
-    font-size: 15px;
+    flex-direction: column;
+    gap: 8px;
+    flex-shrink: 0;
   }
+  .ai-fix-label { font-size: 12px; font-weight: bold; color: #7b1fa2; }
+  #instruction {
+    width: 100%;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    padding: 10px;
+    font-size: 13px;
+    font-family: inherit;
+    resize: none;
+    line-height: 1.5;
+  }
+  #instruction:focus { outline: 2px solid #7b1fa2; border-color: #7b1fa2; }
+  .btn-fix { background: #7b1fa2; color: white; }
 
   .toast {
     position: fixed;
@@ -191,15 +213,38 @@
 </header>
 
 <div class="main">
-  <!-- 左：会話リスト -->
+  <!-- 左：会話一覧 -->
   <div class="sidebar">
-    <div class="sidebar-header">会話一覧</div>
-    <div id="conv-list"><div class="empty-state">メッセージなし</div></div>
+    <div class="search-box">
+      <input id="search-input" type="text" placeholder="🔍 名前・メッセージを検索" oninput="onSearchInput()">
+    </div>
+    <div class="conv-scroll">
+      <div id="conv-list"><div class="empty-state">メッセージなし</div></div>
+    </div>
   </div>
 
-  <!-- 右：チャット + 返信案 -->
-  <div class="chat-panel" id="chat-panel">
-    <div class="no-selection">←左から会話を選択してください</div>
+  <!-- 中央：やり取り -->
+  <div class="chat-panel">
+    <div class="chat-header" id="chat-header">←左から会話を選択してください</div>
+    <div class="chat-messages" id="messages-area"></div>
+  </div>
+
+  <!-- 右：返信案 -->
+  <div class="draft-side">
+    <div class="draft-label">
+      返信案（編集できます）
+      <span id="draft-time"></span>
+    </div>
+    <textarea id="draft-text" placeholder="会話を選択すると返信案が表示されます" oninput="draftEdited = true" disabled></textarea>
+    <div class="draft-actions">
+      <button class="btn btn-copy" id="copy-btn" onclick="copyDraft()" disabled>コピー（エルメに貼り付けて送信）</button>
+      <button class="btn btn-regen" id="regen-btn" onclick="regenerate()" disabled>再生成</button>
+    </div>
+    <div class="ai-fix">
+      <div class="ai-fix-label">🤖 AIに修正を指示</div>
+      <textarea id="instruction" rows="2" placeholder="例：冒頭の挨拶を短くして／「70%オフ」の部分を削除して" disabled></textarea>
+      <button class="btn btn-fix" id="fix-btn" onclick="refineDraft()" disabled>この指示で修正してもらう</button>
+    </div>
   </div>
 </div>
 
@@ -207,8 +252,10 @@
 
 <script>
 let currentUserId = null;
-let refreshTimer = null;
+let currentName = '';
 let draftEdited = false;
+let refreshTimer = null;
+let searchTimer = null;
 
 function formatTime(iso) {
   if (!iso) return '';
@@ -220,142 +267,149 @@ function formatTime(iso) {
          d.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
 }
 
+function escapeHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+// ── 会話一覧・検索 ─────────────────────────────
+
+function onSearchInput() {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(loadConversations, 300);
+}
+
 async function loadConversations() {
-  const res = await fetch('/api/conversations');
+  const q = document.getElementById('search-input').value.trim();
+  const url = q ? `/api/search?q=${encodeURIComponent(q)}` : '/api/conversations';
+  const res = await fetch(url);
   const convs = await res.json();
   const list = document.getElementById('conv-list');
   if (convs.length === 0) {
-    list.innerHTML = '<div class="empty-state">まだメッセージがありません</div>';
+    list.innerHTML = `<div class="empty-state">${q ? '該当する会話がありません' : 'まだメッセージがありません'}</div>`;
     return;
   }
   list.innerHTML = convs.map(c => `
     <div class="conv-item ${c.user_id === currentUserId ? 'active' : ''}"
-         onclick="selectConv('${c.user_id}', '${(c.display_name || c.user_id).replace(/'/g, "\\'")}')">
-      <div class="conv-name">${c.display_name || c.user_id}</div>
-      <div class="conv-preview">${c.last_message ? c.last_message.slice(0, 40) : ''}</div>
+         onclick="selectConv('${c.user_id}', '${escapeHtml(c.display_name || c.user_id).replace(/'/g, "\\'")}')">
+      <div class="conv-name">${escapeHtml(c.display_name || c.user_id)}</div>
+      <div class="conv-preview">${c.last_message ? escapeHtml(c.last_message.slice(0, 40)) : ''}</div>
       <div class="conv-time">${formatTime(c.last_at)}</div>
     </div>
   `).join('');
 }
 
+// ── 会話表示 ─────────────────────────────────
+
 async function selectConv(userId, displayName) {
   currentUserId = userId;
-  await loadConversations(); // refresh active state
-  await loadChat(userId, displayName);
-  startAutoRefresh(userId, displayName);
+  currentName = displayName;
+  draftEdited = false;
+  document.getElementById('chat-header').textContent = displayName;
+  ['draft-text', 'copy-btn', 'regen-btn', 'instruction', 'fix-btn'].forEach(id => {
+    document.getElementById(id).disabled = false;
+  });
+  await loadConversations();
+  await loadChat(true);
+  startAutoRefresh();
 }
 
-function startAutoRefresh(userId, displayName) {
+function startAutoRefresh() {
   if (refreshTimer) clearInterval(refreshTimer);
   refreshTimer = setInterval(() => {
     loadConversations();
-    if (currentUserId === userId) loadChat(userId, displayName);
+    if (currentUserId) loadChat(false);
   }, 10000);
 }
 
-async function loadChat(userId, displayName) {
-  const res = await fetch(`/api/messages/${userId}`);
+async function loadChat(force) {
+  if (!currentUserId) return;
+  const res = await fetch(`/api/messages/${currentUserId}`);
   const data = await res.json();
-  const panel = document.getElementById('chat-panel');
 
-  const messagesHtml = data.messages.map(m => `
+  // 中央のやり取りは常に最新化
+  const area = document.getElementById('messages-area');
+  const nearBottom = area.scrollHeight - area.scrollTop - area.clientHeight < 80;
+  area.innerHTML = data.messages.map(m => `
     <div class="msg-wrapper ${m.direction}">
       <div class="msg ${m.direction}">${escapeHtml(m.content)}</div>
       <div class="msg-time">${formatTime(m.created_at)}</div>
     </div>
-  `).join('');
+  `).join('') || '<div class="chat-empty">メッセージなし</div>';
+  if (force || nearBottom) area.scrollTop = area.scrollHeight;
 
-  const draftContent = data.draft ? data.draft.content : '';
-  const draftTime = data.draft ? `生成: ${formatTime(data.draft.created_at)}` : '';
-
-  // 編集中はメッセージ一覧だけ更新して、入力内容を消さない
-  const existingTa = document.getElementById('draft-text');
-  const editing = existingTa && (draftEdited || document.activeElement === existingTa);
-  if (editing && currentUserId === userId && document.getElementById('messages-area')) {
-    document.getElementById('messages-area').innerHTML =
-      messagesHtml || '<div style="color:#bbb;text-align:center;margin-top:40px">メッセージなし</div>';
-    return;
+  // 返信案は編集中でなければ更新
+  const ta = document.getElementById('draft-text');
+  const editing = draftEdited || document.activeElement === ta;
+  if (force || !editing) {
+    ta.value = data.draft ? data.draft.content : '';
+    draftEdited = false;
+    document.getElementById('draft-time').textContent =
+      data.draft ? `生成: ${formatTime(data.draft.created_at)}` : '';
   }
-
-  panel.innerHTML = `
-    <div class="chat-header">
-      <span>${escapeHtml(displayName)}</span>
-    </div>
-    <div class="chat-messages" id="messages-area">
-      ${messagesHtml || '<div style="color:#bbb;text-align:center;margin-top:40px">メッセージなし</div>'}
-    </div>
-    <div class="draft-panel">
-      <div class="draft-label">
-        返信案（編集できます）
-        <span id="draft-time">${draftTime}</span>
-      </div>
-      <textarea class="draft-text" id="draft-text" placeholder="（返信案なし）" oninput="draftEdited = true">${escapeHtml(draftContent)}</textarea>
-      <div class="draft-actions">
-        <button class="btn btn-copy" onclick="copyDraft()">コピー（エルメに貼り付けて送信）</button>
-        <button class="btn btn-regen" id="regen-btn" onclick="regenerate('${userId}', '${displayName.replace(/'/g, "\\'")}')">返信案を再生成</button>
-      </div>
-    </div>
-  `;
-  draftEdited = false;
-
-  // scroll to bottom
-  const area = document.getElementById('messages-area');
-  if (area) area.scrollTop = area.scrollHeight;
 }
 
-async function regenerate(userId, displayName) {
+// ── ボタン操作 ─────────────────────────────────
+
+function copyDraft() {
+  const text = document.getElementById('draft-text').value;
+  if (!text) { showToast('コピーする返信案がありません'); return; }
+  navigator.clipboard.writeText(text).then(() => showToast('コピーしました'));
+}
+
+async function regenerate() {
+  if (!currentUserId) return;
   const btn = document.getElementById('regen-btn');
-  if (!btn) return;
   btn.disabled = true;
   btn.textContent = '生成中...';
-  btn.classList.add('loading');
-
   try {
-    const res = await fetch(`/api/regenerate/${userId}`, { method: 'POST' });
+    const res = await fetch(`/api/regenerate/${currentUserId}`, { method: 'POST' });
+    if (!res.ok) throw new Error();
     const data = await res.json();
     document.getElementById('draft-text').value = data.draft;
     draftEdited = false;
     document.getElementById('draft-time').textContent = `生成: ${formatTime(new Date().toISOString())}`;
     showToast('返信案を再生成しました');
-  } catch(e) {
+  } catch (e) {
     showToast('エラーが発生しました');
   } finally {
     btn.disabled = false;
-    btn.textContent = '返信案を再生成';
-    btn.classList.remove('loading');
+    btn.textContent = '再生成';
   }
 }
 
-function copyDraft() {
-  const text = document.getElementById('draft-text')?.value;
-  if (!text) return;
-  navigator.clipboard.writeText(text).then(() => showToast('コピーしました'));
-}
-
-async function sendDraft(userId, displayName) {
-  const ta = document.getElementById('draft-text');
-  const text = (ta?.value || '').trim();
-  if (!text) { showToast('送信内容が空です'); return; }
-  if (!confirm('この内容でLINEに送信します。よろしいですか？')) return;
-
-  const btn = document.getElementById('send-btn');
+async function refineDraft() {
+  if (!currentUserId) return;
+  const instructionEl = document.getElementById('instruction');
+  const instruction = instructionEl.value.trim();
+  if (!instruction) { showToast('修正内容を入力してください'); return; }
+  const btn = document.getElementById('fix-btn');
   btn.disabled = true;
-  btn.textContent = '送信中...';
-
+  btn.textContent = 'AIが修正中...';
   try {
-    const res = await fetch(`/api/send/${userId}`, {
+    const res = await fetch(`/api/refine/${currentUserId}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text }),
+      body: JSON.stringify({
+        instruction: instruction,
+        draft: document.getElementById('draft-text').value,
+      }),
     });
-    if (!res.ok) throw new Error('send failed');
+    if (!res.ok) throw new Error();
+    const data = await res.json();
+    document.getElementById('draft-text').value = data.draft;
     draftEdited = false;
-    showToast('送信しました');
-    await loadChat(userId, displayName);
+    instructionEl.value = '';
+    document.getElementById('draft-time').textContent = `生成: ${formatTime(new Date().toISOString())}`;
+    showToast('修正しました');
   } catch (e) {
-    showToast('送信に失敗しました');
+    showToast('エラーが発生しました');
+  } finally {
     btn.disabled = false;
-    btn.textContent = 'LINEに送信';
+    btn.textContent = 'この指示で修正してもらう';
   }
 }
 
@@ -364,17 +418,9 @@ async function reloadManual() {
     const res = await fetch('/api/reload-manual', { method: 'POST' });
     const data = await res.json();
     showToast(`マニュアル再読み込み完了（${data.characters.toLocaleString()}文字）`);
-  } catch(e) {
+  } catch (e) {
     showToast('エラーが発生しました');
   }
-}
-
-function escapeHtml(str) {
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
 }
 
 function showToast(msg) {

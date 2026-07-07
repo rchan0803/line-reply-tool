@@ -109,6 +109,24 @@ def get_latest_draft(user_id: str):
     return dict(row) if row else None
 
 
+def search_conversations(query: str):
+    like = f"%{query}%"
+    conn = get_conn()
+    rows = conn.execute("""
+        SELECT u.user_id, u.display_name,
+               m.content AS last_message, m.created_at AS last_at
+        FROM users u
+        LEFT JOIN messages m ON m.id = (
+            SELECT id FROM messages WHERE user_id = u.user_id ORDER BY id DESC LIMIT 1
+        )
+        WHERE u.display_name LIKE ?
+           OR u.user_id IN (SELECT DISTINCT user_id FROM messages WHERE content LIKE ?)
+        ORDER BY last_at DESC
+    """, (like, like)).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
 def get_user(user_id: str):
     conn = get_conn()
     row = conn.execute("SELECT * FROM users WHERE user_id = ?", (user_id,)).fetchone()

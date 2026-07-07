@@ -13,15 +13,21 @@ def get_client():
 
 SYSTEM_RULES = """あなたはLINE公式アカウントの占い師「ミラ」の返信案を作成するアシスタントです。
 
+【出力形式（厳守）】
+出力は必ず次のどちらか一方のみ。両方を混ぜて出力することは絶対に禁止です。
+A) 「【返信不要】」+ 改行 + 理由1行（合計2行だけ。返信文は書かない）
+B) 返信案の本文のみ
+
 【手順1：返信要否の判定（返信文を書く前に必ず行う）】
-顧客の最新メッセージが以下のいずれかに当てはまる場合は、返信文を一切書かず、次の2行だけを出力して終えてください。
-1行目: 【返信不要】
-2行目: 理由（1行）
+判定の対象は「最後にまとまって届いている顧客メッセージ」です。それより前のメッセージ（過去のテスト送信など）は判定に含めません。
+最新のメッセージが以下のいずれかに当てはまる場合のみ、形式Aで出力してください。
 
 - お礼・相槌だけで会話が自然に完結している（例:「ありがとうございました」「わかりました」「了解です」）
 - テスト送信と思われるもの（例:「テスト」「テスト用送信」「test」）
 - 意味を持たない文字列・誤送信と思われるもの
 - 返答を求めていない一方的な報告
+
+注意: 判定するのは最新のメッセージ1件だけです。過去にテスト送信があっても、最新のメッセージがマニュアルの「相談者様からの返信例」に該当するキーワード（例:「本鑑定希望」）や実質的な内容であれば、必ず形式Bで返信案を作ってください。
 
 【手順2：返信案の作成】
 手順1に当てはまらない場合のみ、以下のルールで返信案を作成してください。
@@ -62,6 +68,62 @@ def generate_reply(messages: list[dict], manual: str, customer_name: str = "") -
     # Ensure the last message is from user (inbound)
     if not conversation or conversation[-1]["role"] != "user":
         return "（返信案を生成できませんでした）"
+
+    # 判定対象を明示して、過去のメッセージに引っ張られないようにする
+    system.append({
+        "type": "text",
+        "text": f"返信要否の判定対象となる最新の顧客メッセージは次の1件です:\n「{conversation[-1]['content']}」",
+    })
+
+    client = get_client()
+    response = client.messages.create(
+        model="claude-sonnet-5",
+        max_tokens=2048,
+        thinking={"type": "disabled"},
+        system=system,
+        messages=conversation,
+    )
+    return response.content[0].text
+
+
+def refine_reply(
+    messages: list[dict],
+    manual: str,
+    customer_name: str,
+    current_draft: str,
+    instruction: str,
+) -> str:
+    """オペレーターの指示に従って現在の返信案を修正する。"""
+    system = [
+        {
+            "type": "text",
+            "text": SYSTEM_RULES + "\n\n【返信マニュアル】\n" + (manual if manual else "（マニュアル未設定）"),
+            "cache_control": {"type": "ephemeral"},
+        },
+        {
+            "type": "text",
+            "text": (
+                "今回のタスクは「既存の返信案の修正」です。返信要否の判定（【返信不要】）は行わず、"
+                "オペレーターの修正指示に従って返信案を書き直し、修正後の返信案本文のみを出力してください。"
+                "指示された箇所以外は、できるだけ元の文章を保ってください。"
+                + (f"\nこの顧客のLINE表示名は「{customer_name}」です。" if customer_name else "")
+            ),
+        },
+    ]
+
+    conversation = []
+    for msg in messages:
+        role = "user" if msg["direction"] == "inbound" else "assistant"
+        conversation.append({"role": role, "content": msg["content"]})
+
+    conversation.append({
+        "role": "user",
+        "content": (
+            "【オペレーターからの修正依頼（顧客のメッセージではありません）】\n"
+            f"現在の返信案:\n---\n{current_draft}\n---\n"
+            f"修正指示: {instruction}"
+        ),
+    })
 
     client = get_client()
     response = client.messages.create(
