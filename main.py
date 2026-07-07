@@ -16,7 +16,7 @@ load_dotenv()
 
 from database import (
     init_db, upsert_user, save_message, save_draft,
-    get_conversations, get_messages, get_latest_draft,
+    get_conversations, get_messages, get_latest_draft, get_user,
 )
 from sheets import load_manual, get_manual_content
 from claude_service import generate_reply
@@ -132,7 +132,7 @@ async def webhook(request: Request):
         # 返信案を生成して保存
         history = get_messages(user_id)
         manual = get_manual_content()
-        draft = generate_reply(history, manual)
+        draft = generate_reply(history, manual, customer_name=display_name)
         save_draft(user_id, draft)
 
     return {"status": "ok"}
@@ -158,7 +158,9 @@ async def api_regenerate(user_id: str):
     if not history:
         raise HTTPException(status_code=404, detail="No messages found")
     manual = get_manual_content()
-    draft = generate_reply(history, manual)
+    user = get_user(user_id)
+    display_name = user["display_name"] if user else ""
+    draft = generate_reply(history, manual, customer_name=display_name)
     save_draft(user_id, draft)
     return {"draft": draft}
 
