@@ -407,6 +407,23 @@ async function selectConv(userId, displayName) {
   await loadConversations();
   await loadChat(true);
   startAutoRefresh();
+  syncFromElme(userId);
+}
+
+async function syncFromElme(userId) {
+  // エルメから履歴・プロフィールを取り込み（裏で実行して終わったら画面更新）
+  try {
+    const res = await fetch(`/api/sync/${userId}`, { method: 'POST' });
+    const data = await res.json();
+    if (currentUserId !== userId) return; // 別の会話に移動済みなら無視
+    if (data.status === 'ok' && data.imported > 0) {
+      showToast(`エルメから${data.imported}件の送信履歴を取り込みました`);
+      await loadChat(false);
+      await loadConversations();
+    } else if (data.status === 'ok') {
+      await loadChat(false);
+    }
+  } catch (e) { /* 未接続などは無視 */ }
 }
 
 async function saveCallName() {

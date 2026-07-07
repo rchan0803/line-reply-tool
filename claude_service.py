@@ -41,7 +41,7 @@ B) 返信案の本文のみ
 - 返信案の本文のみを出力してください（「返信案：」などのラベル、説明文、前置きは一切付けない）"""
 
 
-def generate_reply(messages: list[dict], manual: str, customer_name: str = "") -> str:
+def generate_reply(messages: list[dict], manual: str, customer_name: str = "", customer_profile: str = "") -> str:
     system = [
         {
             "type": "text",
@@ -58,6 +58,15 @@ def generate_reply(messages: list[dict], manual: str, customer_name: str = "") -
                 f"呼びかけには「{customer_name}様」のように使ってください。"
                 "ただし、会話の中で顧客の本名や希望する呼び名が判明している場合は、そちらを優先してください。"
                 "呼び名が記号やニックネームで呼びかけに不自然な場合は、名前を使わない自然な文面にしてください。"
+            ),
+        })
+    if customer_profile:
+        system.append({
+            "type": "text",
+            "text": (
+                "この顧客について顧客管理システム（エルメ）に登録されている情報です。"
+                "相談内容や過去の鑑定内容に触れる際の参考にしてください（そのまま転載はしない）:\n"
+                + customer_profile
             ),
         })
 
@@ -93,6 +102,7 @@ def refine_reply(
     customer_name: str,
     current_draft: str,
     instruction: str,
+    customer_profile: str = "",
 ) -> str:
     """オペレーターの指示に従って現在の返信案を修正する。"""
     system = [
@@ -107,7 +117,8 @@ def refine_reply(
                 "今回のタスクは「既存の返信案の修正」です。返信要否の判定（【返信不要】）は行わず、"
                 "オペレーターの修正指示に従って返信案を書き直し、修正後の返信案本文のみを出力してください。"
                 "指示された箇所以外は、できるだけ元の文章を保ってください。"
-                + (f"\nこの顧客のLINE表示名は「{customer_name}」です。" if customer_name else "")
+                + (f"\nこの顧客の呼び名は「{customer_name}」です。" if customer_name else "")
+                + (f"\n\n【顧客の登録情報（参考）】\n{customer_profile}" if customer_profile else "")
             ),
         },
     ]

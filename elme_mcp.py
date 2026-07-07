@@ -218,3 +218,19 @@ def call_tool(name: str, arguments: dict):
     }, token, session_id)
     resp.raise_for_status()
     return _parse_mcp_response(resp)
+
+
+def call_tool_json(name: str, arguments: dict):
+    """tools/call の結果からJSONペイロードを取り出して返す。"""
+    raw = call_tool(name, arguments)
+    result = raw.get("result", raw) if isinstance(raw, dict) else raw
+    if isinstance(result, dict) and "content" in result:
+        if result.get("isError"):
+            raise RuntimeError(f"エルメMCPエラー: {json.dumps(result, ensure_ascii=False)[:300]}")
+        texts = [c.get("text", "") for c in result["content"] if c.get("type") == "text"]
+        joined = "\n".join(texts)
+        try:
+            return json.loads(joined)
+        except Exception:
+            return joined
+    return result

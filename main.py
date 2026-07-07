@@ -22,6 +22,7 @@ from database import (
 from sheets import load_manuals, get_manual_content
 from claude_service import generate_reply, refine_reply
 import elme_mcp
+import elme_sync
 
 TEMPLATES = Jinja2Templates(directory="templates")
 
@@ -35,6 +36,7 @@ ACCOUNTS = {
         "token": os.getenv("LINE_CHANNEL_ACCESS_TOKEN", ""),
         "elme_url": os.getenv("ELME_WEBHOOK_URL", ""),
         "sheets": [s.strip() for s in os.getenv("MANUAL_SHEETS_MAIN", "公式LINE").split(",") if s.strip()],
+        "elme_bot_id": os.getenv("ELME_BOT_ID", "2l97wR"),  # ミラ|星々の声を届ける恋愛占い師
     },
     "paid": {
         "label": "購入者専用LINE",
@@ -42,6 +44,7 @@ ACCOUNTS = {
         "token": os.getenv("LINE_CHANNEL_ACCESS_TOKEN_PAID", ""),
         "elme_url": os.getenv("ELME_WEBHOOK_URL_PAID", ""),
         "sheets": [s.strip() for s in os.getenv("MANUAL_SHEETS_PAID", "有料鑑定専用LINE,相談内容ヒアリング").split(",") if s.strip()],
+        "elme_bot_id": os.getenv("ELME_BOT_ID_PAID", "OoboML"),  # ミラ【VIPルーム】
     },
 }
 
@@ -102,6 +105,22 @@ def preferred_name(user_id: str) -> str:
     if not user:
         return ""
     return user.get("call_name") or user.get("display_name") or ""
+
+
+def profile_text(user_id: str) -> str:
+    user = get_user(user_id)
+    if not user:
+        return ""
+    return elme_sync.format_profile(user.get("profile") or "")
+
+
+def try_elme_sync(user_id: str, account_id: str) -> dict:
+    """エルメから履歴・プロフィールを取り込む（失敗しても処理は止めない）。"""
+    try:
+        return elme_sync.sync_user(user_id, ACCOUNTS[account_id].get("elme_bot_id", ""))
+    except Exception as e:
+        print(f"[elme_sync] {user_id}: {e}")
+        return {"status": "error", "detail": str(e)}
 
 
 def get_manual_or_reload(account: str) -> str:
@@ -171,10 +190,17 @@ async def process_webhook(account_id: str, request: Request):
         # メッセージを保存
         save_message(user_id, "inbound", text)
 
+        # エルメから履歴・プロフィールを取り込み（ベストエフォート）
+        try_elme_sync(user_id, account_id)
+
         # 返信案を生成して保存
         history = get_messages(user_id)
         manual = get_manual_or_reload(account_id)
-        draft = generate_reply(history, manual, customer_name=preferred_name(user_id))
+        draft = generate_reply(
+            history, manual,
+            customer_name=preferred_name(user_id),
+            customer_profile=profile_text(user_id),
+        )
         save_draft(user_id, draft)
 
     return {"status": "ok"}
@@ -221,6 +247,16 @@ async def api_messages(user_id: str):
     return {"messages": messages, "draft": draft, "user": user}
 
 
+@app.post("/api/sync/{user_id}")
+async def api_sync(user_id: str):
+    """会話を開いたときにエルメから履歴・プロフィールを取り込む。"""
+    user = get_user(user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    account = user.get("account") or "main"
+    return try_elme_sync(user_id, account)
+
+
 class CallNameRequest(BaseModel):
     name: str
 
@@ -241,7 +277,11 @@ async def api_regenerate(user_id: str):
     user = get_user(user_id)
     account = (user.get("account") if user else None) or "main"
     manual = get_manual_or_reload(account)
-    draft = generate_reply(history, manual, customer_name=preferred_name(user_id))
+    draft = generate_reply(
+        history, manual,
+        customer_name=preferred_name(user_id),
+        customer_profile=profile_text(user_id),
+    )
     save_draft(user_id, draft)
     return {"draft": draft}
 
@@ -318,7 +358,10 @@ async def api_refine(user_id: str, req: RefineRequest):
     user = get_user(user_id)
     account = (user.get("account") if user else None) or "main"
     manual = get_manual_or_reload(account)
-    draft = refine_reply(history, manual, preferred_name(user_id), req.draft, instruction)
+    draft = refine_reply(
+        history, manual, preferred_name(user_id), req.draft, instruction,
+        customer_profile=profile_text(user_id),
+    )
     save_draft(user_id, draft)
     return {"draft": draft}
 

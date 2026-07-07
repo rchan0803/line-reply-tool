@@ -46,6 +46,17 @@ def init_db():
         conn.execute("ALTER TABLE users ADD COLUMN call_name TEXT")
     if "account" not in cols:
         conn.execute("ALTER TABLE users ADD COLUMN account TEXT DEFAULT 'main'")
+    if "elme_friend_id" not in cols:
+        conn.execute("ALTER TABLE users ADD COLUMN elme_friend_id INTEGER")
+    if "profile" not in cols:
+        conn.execute("ALTER TABLE users ADD COLUMN profile TEXT")
+    mcols = [r[1] for r in conn.execute("PRAGMA table_info(messages)").fetchall()]
+    if "elme_message_id" not in mcols:
+        conn.execute("ALTER TABLE messages ADD COLUMN elme_message_id INTEGER")
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_elme_id"
+        " ON messages(elme_message_id) WHERE elme_message_id IS NOT NULL"
+    )
     # 過去のタイムゾーンなし時刻（UTCで保存されていた）に +00:00 を付与
     for table, col in (("messages", "created_at"), ("drafts", "created_at"), ("users", "updated_at")):
         conn.execute(
@@ -90,6 +101,34 @@ def save_message(user_id: str, direction: str, content: str):
     conn.close()
 
 
+def save_elme_message(user_id: str, direction: str, content: str, created_at: str, elme_message_id: int) -> bool:
+    """エルメから取り込んだメッセージを保存（取り込み済みならスキップ）。"""
+    conn = get_conn()
+    cur = conn.execute(
+        "INSERT OR IGNORE INTO messages (user_id, direction, content, created_at, elme_message_id)"
+        " VALUES (?, ?, ?, ?, ?)",
+        (user_id, direction, content, created_at, elme_message_id),
+    )
+    conn.commit()
+    inserted = cur.rowcount > 0
+    conn.close()
+    return inserted
+
+
+def set_elme_friend(user_id: str, elme_friend_id: int):
+    conn = get_conn()
+    conn.execute("UPDATE users SET elme_friend_id = ? WHERE user_id = ?", (elme_friend_id, user_id))
+    conn.commit()
+    conn.close()
+
+
+def set_profile(user_id: str, profile_json: str):
+    conn = get_conn()
+    conn.execute("UPDATE users SET profile = ? WHERE user_id = ?", (profile_json, user_id))
+    conn.commit()
+    conn.close()
+
+
 def save_draft(user_id: str, content: str):
     conn = get_conn()
     now = now_iso()
@@ -108,7 +147,7 @@ def get_conversations(account: str = "main"):
                m.content AS last_message, m.created_at AS last_at
         FROM users u
         LEFT JOIN messages m ON m.id = (
-            SELECT id FROM messages WHERE user_id = u.user_id ORDER BY id DESC LIMIT 1
+            SELECT id FROM messages WHERE user_id = u.user_id ORDER BY created_at DESC, id DESC LIMIT 1
         )
         WHERE COALESCE(u.account, 'main') = ?
         ORDER BY last_at DESC
@@ -121,7 +160,7 @@ def get_messages(user_id: str, limit: int = 50):
     conn = get_conn()
     rows = conn.execute(
         "SELECT direction, content, created_at FROM messages"
-        " WHERE user_id = ? ORDER BY id DESC LIMIT ?",
+        " WHERE user_id = ? ORDER BY created_at DESC, id DESC LIMIT ?",
         (user_id, limit),
     ).fetchall()
     conn.close()
@@ -146,7 +185,7 @@ def search_conversations(query: str, account: str = "main"):
                m.content AS last_message, m.created_at AS last_at
         FROM users u
         LEFT JOIN messages m ON m.id = (
-            SELECT id FROM messages WHERE user_id = u.user_id ORDER BY id DESC LIMIT 1
+            SELECT id FROM messages WHERE user_id = u.user_id ORDER BY created_at DESC, id DESC LIMIT 1
         )
         WHERE COALESCE(u.account, 'main') = ?
           AND (u.display_name LIKE ?
