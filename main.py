@@ -23,6 +23,7 @@ from sheets import load_manuals, get_manual_content
 from claude_service import generate_reply, refine_reply
 import elme_mcp
 import elme_sync
+import sheets_sync
 
 TEMPLATES = Jinja2Templates(directory="templates")
 
@@ -51,11 +52,30 @@ ACCOUNTS = {
 ACCOUNT_SHEETS = {aid: acc["sheets"] for aid, acc in ACCOUNTS.items()}
 
 
+async def form_sync_loop():
+    """30分ごとにエルメのフォーム回答を無料鑑定リストへ自動転記する。"""
+    import asyncio
+    await asyncio.sleep(90)  # 起動直後は避ける
+    while True:
+        try:
+            result = await asyncio.to_thread(
+                sheets_sync.sync_free_forms, ACCOUNTS["main"]["elme_bot_id"]
+            )
+            if result.get("new_count"):
+                print(f"[form_sync] 新規{result['new_count']}件を転記")
+        except Exception as e:
+            print(f"[form_sync] エラー: {e}")
+        await asyncio.sleep(1800)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    import asyncio
     init_db()
     load_manuals(ACCOUNT_SHEETS)
+    task = asyncio.create_task(form_sync_loop())
     yield
+    task.cancel()
 
 
 app = FastAPI(lifespan=lifespan)
@@ -111,7 +131,23 @@ def profile_text(user_id: str) -> str:
     user = get_user(user_id)
     if not user:
         return ""
-    return elme_sync.format_profile(user.get("profile") or "")
+    text = elme_sync.format_profile(user.get("profile") or "")
+    # 購入者LINEの顧客はSTORESの注文履歴も照合してAIに渡す
+    if (user.get("account") or "main") == "paid":
+        try:
+            names = [user.get("call_name") or "", user.get("display_name") or ""]
+            orders = sheets_sync.find_orders(names)
+            if orders:
+                lines = [
+                    f"- {o['注文日時']} {o['商品名']}（{o['氏名']} / 注文番号{o['注文番号']} / {o['ステータス']}）"
+                    for o in orders
+                ]
+                text += "\n\n【STORES注文履歴（照合済み）】\n" + "\n".join(lines)
+            else:
+                text += "\n\n【STORES注文履歴】名前一致する注文が見つかりません（購入確認が必要な場合は要注意）"
+        except Exception as e:
+            print(f"[orders] 照合エラー: {e}")
+    return text
 
 
 def try_elme_sync(user_id: str, account_id: str) -> dict:
@@ -245,6 +281,18 @@ async def api_messages(user_id: str):
     draft = get_latest_draft(user_id)
     user = get_user(user_id)
     return {"messages": messages, "draft": draft, "user": user}
+
+
+@app.post("/api/sync-forms")
+async def api_sync_forms(dry_run: int = 0):
+    """エルメのフォーム回答を無料鑑定リストへ転記（dry_run=1で書き込まず確認）。"""
+    import asyncio
+    try:
+        return await asyncio.to_thread(
+            sheets_sync.sync_free_forms, ACCOUNTS["main"]["elme_bot_id"], bool(dry_run)
+        )
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
 
 
 @app.post("/api/sync/{user_id}")
