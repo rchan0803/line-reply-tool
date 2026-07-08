@@ -310,10 +310,16 @@ let searchTimer = null;
 
 // ── アカウント切り替え ─────────────────────────
 
+let accountsCache = [];
+
 async function loadAccounts() {
   const res = await fetch('/api/accounts');
-  const accounts = await res.json();
-  document.getElementById('account-tabs').innerHTML = accounts.map(a => `
+  accountsCache = await res.json();
+  renderAccountTabs();
+}
+
+function renderAccountTabs() {
+  document.getElementById('account-tabs').innerHTML = accountsCache.map(a => `
     <button class="account-tab ${a.id === currentAccount ? 'active' : ''} ${a.configured ? '' : 'unconfigured'}"
             onclick="switchAccount('${a.id}')">${a.label}${a.configured ? '' : '（未接続）'}</button>
   `).join('');
@@ -337,7 +343,7 @@ function switchAccount(accountId) {
   ['draft-text', 'copy-btn', 'regen-btn', 'instruction', 'fix-btn'].forEach(id => {
     document.getElementById(id).disabled = true;
   });
-  loadAccounts();
+  renderAccountTabs();  // 即座にタブ表示を切り替える（通信を待たない）
   loadConversations();
 }
 
