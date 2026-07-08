@@ -16,18 +16,18 @@ SYSTEM_RULES = """あなたはLINE公式アカウントの占い師「ミラ」�
 【出力形式（厳守）】
 出力は必ず次のどちらか一方のみ。両方を混ぜて出力することは絶対に禁止です。
 A) 「【返信不要】」+ 改行 + 理由1行（合計2行だけ。返信文は書かない）
-B) 返信案の本文のみ
+B) 返信案の本文のみ（1文字目から顧客に送る文章で始めること。判定理由・運用ルールへの言及・「〜を送ります」などの説明文を本文の前後に付けてはいけない）
 
 【手順1：返信要否の判定（返信文を書く前に必ず行う）】
-判定の対象は「最後にまとまって届いている顧客メッセージ」です。それより前のメッセージ（過去のテスト送信など）は判定に含めません。
-最新のメッセージが以下のいずれかに当てはまる場合のみ、形式Aで出力してください。
+判定の対象は「前回こちらから送信した後に届いた、顧客メッセージのまとまり全体」です。最後の1通だけで判断してはいけません。
+例: 鑑定の感想と「特典希望」が届いた後に外出報告などの雑談が続いた場合、雑談だけを見て返信不要にせず、感想と特典希望に返信する形式Bを出力します。
 
-- お礼・相槌だけで会話が自然に完結している（例:「ありがとうございました」「わかりました」「了解です」）
-- テスト送信と思われるもの（例:「テスト」「テスト用送信」「test」）
-- 意味を持たない文字列・誤送信と思われるもの
-- 返答を求めていない一方的な報告
+以下の**すべて**に当てはまる場合のみ、形式Aで出力してください。
+- まとまり全体が、お礼・相槌・雑談・独り言・テスト送信・意味のない文字列だけで構成されている
+- 質問・依頼・関心の表明（「特典希望」「詳しく知りたい」等）・悩みの相談・購入報告が1つも含まれていない
 
-注意: 判定するのは最新のメッセージ1件だけです。過去にテスト送信があっても、最新のメッセージがマニュアルの「相談者様からの返信例」に該当するキーワード（例:「本鑑定希望」）や実質的な内容であれば、必ず形式Bで返信案を作ってください。
+補足: それより前の古いメッセージ（過去のテスト送信など）は判定に含めません。「（スタンプ）」「（画像）」「（友だち追加）」はテキスト以外の出来事を表す記号です。
+最優先: 【このアカウントの運用ルール】に該当するケース（例: 新規入室への案内を作る等）は、この判定基準より運用ルールを優先し、形式Bで返信案を作ってください。
 
 【手順2：返信案の作成】
 手順1に当てはまらない場合のみ、以下のルールで返信案を作成してください。
@@ -41,7 +41,7 @@ B) 返信案の本文のみ
 - 返信案の本文のみを出力してください（「返信案：」などのラベル、説明文、前置きは一切付けない）"""
 
 
-def generate_reply(messages: list[dict], manual: str, customer_name: str = "", customer_profile: str = "") -> str:
+def generate_reply(messages: list[dict], manual: str, customer_name: str = "", customer_profile: str = "", account_rules: str = "") -> str:
     system = [
         {
             "type": "text",
@@ -60,6 +60,8 @@ def generate_reply(messages: list[dict], manual: str, customer_name: str = "", c
                 "呼び名が記号やニックネームで呼びかけに不自然な場合は、名前を使わない自然な文面にしてください。"
             ),
         })
+    if account_rules:
+        system.append({"type": "text", "text": "【このアカウントの運用ルール】\n" + account_rules})
     if customer_profile:
         system.append({
             "type": "text",
@@ -79,21 +81,31 @@ def generate_reply(messages: list[dict], manual: str, customer_name: str = "", c
     if not conversation or conversation[-1]["role"] != "user":
         return "（返信案を生成できませんでした）"
 
-    # 判定対象を明示して、過去のメッセージに引っ張られないようにする
+    # 判定対象（前回送信以降に届いた顧客メッセージ群）を明示する
+    recent = []
+    for m in reversed(conversation):
+        if m["role"] != "user":
+            break
+        recent.append(m["content"])
+    recent.reverse()
+    joined = "\n---\n".join(recent)
     system.append({
         "type": "text",
-        "text": f"返信要否の判定対象となる最新の顧客メッセージは次の1件です:\n「{conversation[-1]['content']}」",
+        "text": f"返信要否の判定対象（前回こちらが送信した後に届いた顧客メッセージのまとまり）:\n{joined}",
     })
 
     client = get_client()
     response = client.messages.create(
         model="claude-sonnet-5",
-        max_tokens=2048,
-        thinking={"type": "disabled"},
+        max_tokens=6000,
+        thinking={"type": "adaptive"},
         system=system,
         messages=conversation,
     )
-    return response.content[0].text
+    return next(
+        (block.text for block in response.content if block.type == "text"),
+        "（返信案を生成できませんでした）",
+    )
 
 
 def refine_reply(
@@ -140,9 +152,12 @@ def refine_reply(
     client = get_client()
     response = client.messages.create(
         model="claude-sonnet-5",
-        max_tokens=2048,
-        thinking={"type": "disabled"},
+        max_tokens=6000,
+        thinking={"type": "adaptive"},
         system=system,
         messages=conversation,
     )
-    return response.content[0].text
+    return next(
+        (block.text for block in response.content if block.type == "text"),
+        "（返信案を生成できませんでした）",
+    )

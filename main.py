@@ -30,14 +30,27 @@ TEMPLATES = Jinja2Templates(directory="templates")
 # ─── アカウント設定 ────────────────────────────────────────────
 # main: 公式LINE（無料鑑定側） / paid: 鑑定購入者専用LINE
 
+MAIN_RULES = """このアカウントは「公式LINE」（無料鑑定・キャンペーン鑑定の窓口）です。
+- テンプレはまず「公式LINE」シートを優先して使う
+- 鑑定文・鑑定書の送付後に、感想や「特典希望」「特典について知りたい」等の関心が届いた場合は、「有料鑑定専用LINE」シートの「アップセル提案」テンプレを顧客の悩み・状況・感想に合わせて書き換えて案内する（返信不要にしない）
+- アップセルの辞退連絡には「ダウンセル提案」テンプレの利用を検討する"""
+
+PAID_RULES = """このアカウントは「購入者専用LINE（VIPルーム）」です。鑑定を購入した顧客だけが入室します。
+- 新規顧客から「（友だち追加）」「（スタンプ）」や挨拶のみが届いた場合は、購入直後の入室とみなし、「相談内容ヒアリング」シートのヒアリング案内テンプレで返信案を作る（返信不要にしない）
+- ヒアリング回答を受領したら「ヒアリング内容受領時」テンプレをもとに受領メッセージを作る
+- 鑑定書送付後に感想や特典希望が届いたら「アップセル提案」テンプレを状況に合わせて書き換えて案内する
+- 辞退の連絡には「ダウンセル提案」の利用を検討する"""
+
 ACCOUNTS = {
     "main": {
         "label": "公式LINE",
         "secret": os.getenv("LINE_CHANNEL_SECRET", ""),
         "token": os.getenv("LINE_CHANNEL_ACCESS_TOKEN", ""),
         "elme_url": os.getenv("ELME_WEBHOOK_URL", ""),
-        "sheets": [s.strip() for s in os.getenv("MANUAL_SHEETS_MAIN", "公式LINE").split(",") if s.strip()],
+        # キャンペーン鑑定のアップセル対応があるため、有料鑑定専用LINEシートも参照する
+        "sheets": [s.strip() for s in os.getenv("MANUAL_SHEETS_MAIN", "公式LINE,有料鑑定専用LINE").split(",") if s.strip()],
         "elme_bot_id": os.getenv("ELME_BOT_ID", "2l97wR"),  # ミラ|星々の声を届ける恋愛占い師
+        "rules": MAIN_RULES,
     },
     "paid": {
         "label": "購入者専用LINE",
@@ -46,6 +59,7 @@ ACCOUNTS = {
         "elme_url": os.getenv("ELME_WEBHOOK_URL_PAID", ""),
         "sheets": [s.strip() for s in os.getenv("MANUAL_SHEETS_PAID", "有料鑑定専用LINE,相談内容ヒアリング").split(",") if s.strip()],
         "elme_bot_id": os.getenv("ELME_BOT_ID_PAID", "OoboML"),  # ミラ【VIPルーム】
+        "rules": PAID_RULES,
     },
 }
 
@@ -211,13 +225,34 @@ async def process_webhook(account_id: str, request: Request):
 
     data = json.loads(body)
     for event in data.get("events", []):
-        if event.get("type") != "message":
-            continue
-        if event["message"].get("type") != "text":
+        etype = event.get("type")
+        if etype == "message":
+            msg = event.get("message", {})
+            mtype = msg.get("type")
+            if mtype == "text":
+                text = msg.get("text", "")
+            elif mtype == "sticker":
+                text = "（スタンプ）"
+            elif mtype == "image":
+                text = "（画像）"
+            elif mtype == "video":
+                text = "（動画）"
+            elif mtype == "audio":
+                text = "（音声）"
+            elif mtype == "file":
+                text = f"（ファイル: {msg.get('fileName', '')}）"
+            elif mtype == "location":
+                text = "（位置情報）"
+            else:
+                continue
+        elif etype == "follow":
+            text = "（友だち追加）"
+        else:
             continue
 
-        user_id = event["source"]["userId"]
-        text = event["message"]["text"]
+        user_id = (event.get("source") or {}).get("userId")
+        if not user_id or not text:
+            continue
 
         # ユーザー情報を保存
         display_name = get_line_profile(user_id, acc["token"])
@@ -236,6 +271,7 @@ async def process_webhook(account_id: str, request: Request):
             history, manual,
             customer_name=preferred_name(user_id),
             customer_profile=profile_text(user_id),
+            account_rules=acc.get("rules", ""),
         )
         save_draft(user_id, draft)
 
@@ -329,6 +365,7 @@ async def api_regenerate(user_id: str):
         history, manual,
         customer_name=preferred_name(user_id),
         customer_profile=profile_text(user_id),
+        account_rules=ACCOUNTS.get(account, {}).get("rules", ""),
     )
     save_draft(user_id, draft)
     return {"draft": draft}
