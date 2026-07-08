@@ -18,6 +18,9 @@ FREE_LIST_WORKSHEET = os.getenv("FREE_LIST_WORKSHEET", "顧客リスト")
 BUYER_LIST_SHEET_ID = os.getenv("BUYER_LIST_SHEET_ID", "1VTsF-pq1Ua7D7e4USnTTlZTURgEIIDZsfXbIIqurrf4")
 ORDER_WORKSHEET = os.getenv("ORDER_WORKSHEET", "オーダー")
 
+# 転記対象のフォームID（キャンペーンフォームは別管理のため通常フォームのみ）
+SYNC_FORM_IDS = [s.strip() for s in os.getenv("ELME_FORM_IDS", "118947").split(",") if s.strip()]
+
 _client = None
 
 
@@ -86,6 +89,8 @@ def sync_free_forms(bot_id: str, dry_run: bool = False, per_form_limit: int = 10
     forms = elme_mcp.call_tool_json("list_forms", {"bot_id": bot_id})
     new_entries = []
     for form in forms.get("forms", []):
+        if SYNC_FORM_IDS and str(form.get("id")) not in SYNC_FORM_IDS:
+            continue  # キャンペーン用フォームなどは転記しない
         res = elme_mcp.call_tool_json("get_form_responses", {
             "bot_id": bot_id,
             "form_id": str(form.get("id")),
