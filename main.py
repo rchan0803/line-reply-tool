@@ -81,14 +81,30 @@ async def form_sync_loop():
         await asyncio.sleep(1800)
 
 
+async def order_import_loop():
+    """25分ごとにSTORESの注文をオーダーシートへ取り込む。"""
+    import asyncio
+    await asyncio.sleep(150)  # フォーム同期とずらす
+    while True:
+        try:
+            result = await asyncio.to_thread(sheets_sync.import_stores_orders)
+            if result.get("status") == "ok":
+                print(f"[stores] {result['count']}件を取り込み")
+        except Exception as e:
+            print(f"[stores] エラー: {e}")
+        await asyncio.sleep(1500)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     import asyncio
     init_db()
     load_manuals(ACCOUNT_SHEETS)
     task = asyncio.create_task(form_sync_loop())
+    task2 = asyncio.create_task(order_import_loop())
     yield
     task.cancel()
+    task2.cancel()
 
 
 app = FastAPI(lifespan=lifespan)
@@ -418,6 +434,16 @@ async def api_hearing_transcribe(user_id: str, req: HearingRequest):
         if result.get("appraisal_row"):
             set_appraisal_row(user_id, result["appraisal_row"])
         return result
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+@app.post("/api/import-orders")
+async def api_import_orders():
+    """STORESから注文を取り込み、オーダーシートを更新する。"""
+    import asyncio
+    try:
+        return await asyncio.to_thread(sheets_sync.import_stores_orders)
     except Exception as e:
         raise HTTPException(status_code=502, detail=str(e))
 

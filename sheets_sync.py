@@ -6,12 +6,18 @@
 import json
 import os
 import re
-from datetime import datetime
+import time
+from datetime import datetime, timezone, timedelta
 
 import gspread
+import httpx
 from google.oauth2.service_account import Credentials
 
 import elme_mcp
+
+JST = timezone(timedelta(hours=9))
+STORES_CREDENTIAL = os.getenv("STORES_CREDENTIAL", "")
+STORES_BASE_URL = "https://api.stores.dev/retail/202211"
 
 FREE_LIST_SHEET_ID = os.getenv("FREE_LIST_SHEET_ID", "1IXBSQLNHZDzY77okHwMXyeLr77eSiXOsJ4JGqpl4LoQ")
 FREE_LIST_WORKSHEET = os.getenv("FREE_LIST_WORKSHEET", "顧客リスト")
@@ -154,6 +160,100 @@ _ORDERS_TTL = 600  # 10分キャッシュ
 def _load_orders():
     ws = _get_client().open_by_key(BUYER_LIST_SHEET_ID).worksheet(ORDER_WORKSHEET)
     return ws.get_values("A2:F")
+
+
+# ── STORES API → オーダーシート取り込み ────────────────────────
+
+def _stores_fetch_all_orders(token: str) -> list:
+    """STORESの全注文を取得する（ページネーション）。"""
+    result = []
+    offset = 0
+    limit = 50
+    with httpx.Client(timeout=30) as client:
+        while True:
+            r = client.get(
+                f"{STORES_BASE_URL}/orders",
+                params={"limit": limit, "offset": offset},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            if r.status_code == 429:
+                time.sleep(60)
+                continue
+            if r.status_code != 200:
+                raise RuntimeError(f"STORES APIエラー {r.status_code}: {r.text[:200]}")
+            body = r.json()
+            orders = body if isinstance(body, list) else (body.get("orders") or [])
+            if not orders:
+                break
+            result.extend(orders)
+            if len(orders) < limit:
+                break
+            offset += limit
+            time.sleep(0.3)
+    return result
+
+
+def _stores_status(delivery, transactions) -> str:
+    if delivery and delivery.get("canceled_at"):
+        return "キャンセル"
+    if delivery and delivery.get("shipped_at"):
+        return "発送済み"
+    if transactions and any(t.get("paid_at") for t in transactions):
+        return "支払済み"
+    return "未払い"
+
+
+def _stores_fmt_date(iso: str) -> str:
+    if not iso:
+        return ""
+    try:
+        dt = datetime.fromisoformat(iso.replace("Z", "+00:00")).astimezone(JST)
+        return dt.strftime("%Y/%m/%d %H:%M")
+    except Exception:
+        return iso[:16]
+
+
+def import_stores_orders() -> dict:
+    """STORESから注文を取得し、オーダーシートを丸ごと更新する（GASの取り込みボタン相当）。"""
+    if not STORES_CREDENTIAL:
+        return {"status": "no_credential"}
+
+    orders = _stores_fetch_all_orders(STORES_CREDENTIAL)
+    orders.sort(key=lambda o: o.get("ordered_at") or "")
+
+    rows = []
+    for order in orders:
+        addr = order.get("billing_address") or {}
+        shipping = [d for d in (order.get("deliveries") or []) if d.get("type") == "shipping"]
+        if shipping:
+            for delivery in shipping:
+                status = _stores_status(delivery, order.get("transactions"))
+                for item in (delivery.get("items") or []):
+                    rows.append([
+                        order.get("number"), _stores_fmt_date(order.get("ordered_at")),
+                        addr.get("last_name") or "", addr.get("first_name") or "",
+                        item.get("name") or "", status,
+                    ])
+        else:
+            rows.append([
+                order.get("number"), _stores_fmt_date(order.get("ordered_at")),
+                addr.get("last_name") or "", addr.get("first_name") or "",
+                "", _stores_status(None, order.get("transactions")),
+            ])
+
+    # 安全策: 0件（APIの一時不調など）ならシートを消さずに中断
+    if not rows:
+        return {"status": "empty", "count": 0}
+
+    ws = _get_client().open_by_key(BUYER_LIST_SHEET_ID).worksheet(ORDER_WORKSHEET)
+    last = len(ws.col_values(1))
+    if last > 1:
+        ws.batch_clear([f"A2:F{last}"])
+    ws.update(range_name=f"A2:F{1 + len(rows)}", values=rows, value_input_option="USER_ENTERED")
+
+    # 取り込み直後にバッジへ反映されるようキャッシュを破棄
+    _orders_cache["rows"] = None
+    return {"status": "ok", "count": len(rows)}
 
 
 def classify_order(product_name: str, status: str) -> dict:

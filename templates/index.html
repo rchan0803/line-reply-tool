@@ -295,7 +295,10 @@
     <h1>LINE 返信案ツール</h1>
     <div class="account-tabs" id="account-tabs"></div>
   </div>
-  <button onclick="reloadManual()">マニュアル再読み込み</button>
+  <div style="display:flex; gap:8px;">
+    <button onclick="importOrders()">STORES取り込み</button>
+    <button onclick="reloadManual()">マニュアル再読み込み</button>
+  </div>
 </header>
 
 <div class="main">
@@ -718,6 +721,26 @@ async function refineDraft() {
   } finally {
     btn.disabled = false;
     btn.textContent = 'この指示で修正してもらう';
+  }
+}
+
+async function importOrders() {
+  showToast('STORESから取り込み中…');
+  try {
+    const res = await fetch('/api/import-orders', { method: 'POST' });
+    const d = await res.json();
+    if (d.status === 'ok') {
+      showToast(`STORES注文を${d.count}件取り込みました`);
+      if (currentUserId) await loadChat(true);  // バッジを更新
+    } else if (d.status === 'no_credential') {
+      showToast('STORESの認証情報が未設定です（管理者へ）');
+    } else if (d.status === 'empty') {
+      showToast('取り込む注文がありませんでした');
+    } else {
+      showToast('取り込みに失敗しました');
+    }
+  } catch (e) {
+    showToast('取り込みに失敗しました');
   }
 }
 
