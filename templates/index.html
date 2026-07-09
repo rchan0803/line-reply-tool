@@ -121,6 +121,49 @@
     cursor: pointer;
   }
   .btn-small:hover { opacity: 0.85; }
+
+  /* 購入状況バッジ ＋ VIP操作 */
+  .vip-bar {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    padding: 8px 20px;
+    background: #f7faf7;
+    border-bottom: 1px solid #e0e0e0;
+    font-size: 12.5px;
+    flex-shrink: 0;
+  }
+  .order-badge { padding: 4px 12px; border-radius: 14px; font-weight: bold; }
+  .order-badge.purchased { background: #e3f6e4; color: #1b7a25; }
+  .order-badge.upsell_only { background: #e3f6e4; color: #1b7a25; }
+  .order-badge.cancelled { background: #fdecec; color: #b3261e; }
+  .order-badge.unpaid { background: #fdf4e3; color: #9a5b07; }
+  .order-badge.none { background: #eee; color: #777; }
+  .vip-spacer { flex: 1; }
+  .btn-vip {
+    padding: 6px 14px; border: 1px solid #7b1fa2; border-radius: 6px;
+    background: white; color: #7b1fa2; font-size: 12px; font-weight: bold; cursor: pointer;
+  }
+  .btn-vip:hover { background: #f6eefa; }
+  .btn-vip:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* モーダル */
+  .modal-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.4);
+    display: none; align-items: center; justify-content: center; z-index: 1000;
+  }
+  .modal-overlay.show { display: flex; }
+  .modal {
+    background: white; border-radius: 12px; padding: 22px;
+    width: 560px; max-width: 92vw; max-height: 86vh; overflow-y: auto;
+  }
+  .modal h3 { font-size: 16px; margin-bottom: 12px; }
+  .modal .field { font-size: 13px; margin: 6px 0; color: #444; }
+  .modal .field b { color: #111; }
+  .modal textarea {
+    width: 100%; min-height: 160px; border: 1px solid #ddd; border-radius: 8px;
+    padding: 10px; font-size: 13px; font-family: inherit; line-height: 1.6; resize: vertical;
+  }
+  .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 16px; }
+  .modal-note { font-size: 12px; color: #9a5b07; background: #fdf4e3; border-radius: 6px; padding: 8px 12px; margin: 10px 0; }
   .chat-messages {
     flex: 1;
     overflow-y: auto;
@@ -276,6 +319,12 @@
         <button class="btn-small" onclick="saveCallName()">保存</button>
       </span>
     </div>
+    <div class="vip-bar" id="vip-bar" style="display:none;">
+      <span class="order-badge none" id="order-badge">購入状況を確認中…</span>
+      <span class="vip-spacer"></span>
+      <button class="btn-vip" id="buyer-btn" onclick="openBuyerAdd()">購入者リストに登録</button>
+      <button class="btn-vip" id="hearing-btn" onclick="openHearing()">ヒアリングを転記</button>
+    </div>
     <div class="chat-messages" id="messages-area"></div>
   </div>
 
@@ -296,6 +345,10 @@
       <button class="btn btn-fix" id="fix-btn" onclick="refineDraft()" disabled>この指示で修正してもらう</button>
     </div>
   </div>
+</div>
+
+<div class="modal-overlay" id="modal-overlay">
+  <div class="modal" id="modal-content"></div>
 </div>
 
 <div class="toast" id="toast"></div>
@@ -334,6 +387,7 @@ function switchAccount(accountId) {
   if (refreshTimer) clearInterval(refreshTimer);
   document.getElementById('chat-header-name').textContent = '←左から会話を選択してください';
   document.getElementById('call-name-box').style.display = 'none';
+  document.getElementById('vip-bar').style.display = 'none';
   document.getElementById('messages-area').innerHTML = '';
   document.getElementById('search-input').value = '';
   const ta = document.getElementById('draft-text');
@@ -407,6 +461,7 @@ async function selectConv(userId, displayName) {
   document.getElementById('chat-header-name').textContent = displayName;
   document.getElementById('call-name-box').style.display = 'flex';
   document.getElementById('call-name-input').value = '';
+  document.getElementById('vip-bar').style.display = (currentAccount === 'paid') ? 'flex' : 'none';
   ['draft-text', 'copy-btn', 'regen-btn', 'instruction', 'fix-btn'].forEach(id => {
     document.getElementById(id).disabled = false;
   });
@@ -488,6 +543,108 @@ async function loadChat(force) {
   if (data.user && document.activeElement !== cn) {
     cn.value = data.user.call_name || '';
   }
+
+  // 購入状況バッジ（VIPのみ）
+  if (currentAccount === 'paid' && data.order) {
+    const badge = document.getElementById('order-badge');
+    badge.className = 'order-badge ' + (data.order.state || 'none');
+    badge.textContent = data.order.label || '購入状況不明';
+  }
+}
+
+// ── VIP操作：購入者リスト登録 ──────────────────────────
+
+function closeModal() { document.getElementById('modal-overlay').classList.remove('show'); }
+
+function showModal(html) {
+  document.getElementById('modal-content').innerHTML = html;
+  document.getElementById('modal-overlay').classList.add('show');
+}
+
+async function openBuyerAdd() {
+  if (!currentUserId) return;
+  const uid = currentUserId;
+  showModal('<h3>購入者リストに登録</h3><p>確認中…</p>');
+  try {
+    const res = await fetch(`/api/buyer-preview/${uid}`, { method: 'POST' });
+    if (!res.ok) throw new Error();
+    const d = await res.json();
+    const orderInfo = d.order
+      ? `${d.order['商品名']}（注文番号 ${d.order['注文番号']} / ${d.order['ステータス']}）`
+      : '（該当する有効な注文が見つかりません — 手入力で補ってください）';
+    let body = `
+      <h3>購入者リストに登録</h3>
+      <div class="field"><b>LINE名：</b>${escapeHtml(d.line_name || '(なし)')}</div>
+      <div class="field"><b>顧客名：</b>${escapeHtml(d.customer_name || '(未設定)')}</div>
+      <div class="field"><b>注文：</b>${escapeHtml(orderInfo)}</div>`;
+    if (d.existing_row) {
+      body += `<div class="modal-note">この方は既に${d.existing_row}行目に登録されています。重複登録は行いません。</div>
+        <div class="modal-actions"><button class="btn btn-regen" onclick="closeModal()">閉じる</button></div>`;
+    } else {
+      body += `<div class="field"><b>登録先：</b>${d.next_no}番（新規行として追加）</div>
+        <div class="modal-actions">
+          <button class="btn btn-regen" onclick="closeModal()">キャンセル</button>
+          <button class="btn btn-copy" onclick="doBuyerAdd('${uid}')">この内容で登録</button>
+        </div>`;
+    }
+    showModal(body);
+  } catch (e) {
+    showModal('<h3>エラー</h3><p>購入者リストの確認に失敗しました。</p><div class="modal-actions"><button class="btn btn-regen" onclick="closeModal()">閉じる</button></div>');
+  }
+}
+
+async function doBuyerAdd(uid) {
+  try {
+    const res = await fetch(`/api/buyer-add/${uid}`, { method: 'POST' });
+    const d = await res.json();
+    closeModal();
+    if (d.status === 'added') showToast(`購入者リストに登録しました（${d.no}番）`);
+    else if (d.status === 'exists') showToast('既に登録済みでした');
+    else showToast('登録しました');
+  } catch (e) { showToast('登録に失敗しました'); }
+}
+
+// ── VIP操作：ヒアリング転記 ────────────────────────────
+
+async function openHearing() {
+  if (!currentUserId) return;
+  const uid = currentUserId;
+  // 直近の顧客メッセージ（受信）をまとめて初期値にする
+  const res = await fetch(`/api/messages/${uid}`);
+  const data = await res.json();
+  const recent = [];
+  for (let i = data.messages.length - 1; i >= 0; i--) {
+    if (data.messages[i].direction !== 'inbound') break;
+    recent.unshift(data.messages[i].content);
+  }
+  const initial = recent.join('\n');
+  showModal(`
+    <h3>ヒアリング内容を転記</h3>
+    <div class="modal-note">下の内容を「有料鑑定文作成」シートのA列（お悩み）に転記し、鑑定購入者リストの受付日に今日の日付を記録します。<br>※鑑定文の生成は行いません（転記後、シートでステータスを「生成OK」にすると生成されます）。</div>
+    <div class="field"><b>転記する内容（編集できます）：</b></div>
+    <textarea id="hearing-text">${escapeHtml(initial)}</textarea>
+    <div class="modal-actions">
+      <button class="btn btn-regen" onclick="closeModal()">キャンセル</button>
+      <button class="btn btn-copy" onclick="doHearing('${uid}')">この内容で転記</button>
+    </div>
+  `);
+}
+
+async function doHearing(uid) {
+  const text = document.getElementById('hearing-text').value.trim();
+  if (!text) { showToast('転記する内容が空です'); return; }
+  try {
+    const res = await fetch(`/api/hearing-transcribe/${uid}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }),
+    });
+    if (!res.ok) throw new Error();
+    const d = await res.json();
+    closeModal();
+    const dateNote = d.buyer_row ? `／受付日を記録（${d.date}）` : '／購入者リストの行が見つからず受付日は未記録';
+    showToast(`転記しました（${d.appraisal_row}行目${dateNote}）`);
+  } catch (e) { showToast('転記に失敗しました'); }
 }
 
 // ── ボタン操作 ─────────────────────────────────

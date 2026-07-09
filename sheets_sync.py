@@ -17,6 +17,14 @@ FREE_LIST_SHEET_ID = os.getenv("FREE_LIST_SHEET_ID", "1IXBSQLNHZDzY77okHwMXyeLr7
 FREE_LIST_WORKSHEET = os.getenv("FREE_LIST_WORKSHEET", "顧客リスト")
 BUYER_LIST_SHEET_ID = os.getenv("BUYER_LIST_SHEET_ID", "1VTsF-pq1Ua7D7e4USnTTlZTURgEIIDZsfXbIIqurrf4")
 ORDER_WORKSHEET = os.getenv("ORDER_WORKSHEET", "オーダー")
+BUYER_WORKSHEET = os.getenv("BUYER_WORKSHEET", "鑑定購入者リスト")
+BUYER_HEADER_ROW = 2  # 鑑定購入者リストのヘッダーは2行目
+
+APPRAISAL_SHEET_ID = os.getenv("APPRAISAL_SHEET_ID", "15pVk9MtHgNZS7SfmU1zfjDAFGqpm-XmTbjRXsX4QdhQ")
+APPRAISAL_WORKSHEET = os.getenv("APPRAISAL_WORKSHEET", "鑑定文出力")
+
+# 有効な購入とみなすステータス（キャンセル・未払いは除外）
+VALID_ORDER_STATUS = {"支払済み", "発送済み"}
 
 # 転記対象のフォームID（キャンペーンフォームは別管理のため通常フォームのみ）
 SYNC_FORM_IDS = [s.strip() for s in os.getenv("ELME_FORM_IDS", "118947").split(",") if s.strip()]
@@ -148,6 +156,23 @@ def _load_orders():
     return ws.get_values("A2:F")
 
 
+def classify_order(product_name: str, status: str) -> dict:
+    """注文の商品名・ステータスから、購入有効性とコース種別を判定する。"""
+    name = product_name or ""
+    valid = status in VALID_ORDER_STATUS
+    # アップセル系（物販・施術）は鑑定コースではない
+    is_upsell = any(k in name for k in ["ブレス", "ヒーリング", "パワーストーン", "セッション", "施術", "ストーン"])
+    if is_upsell:
+        course = "アップセル"
+    elif "スタンダード" in name:
+        course = "スタンダード"
+    elif "ライト" in name:
+        course = "ライト"
+    else:
+        course = "要確認"
+    return {"valid": valid, "is_upsell": is_upsell, "course": course}
+
+
 def find_orders(names: list[str], refresh: bool = False) -> list[dict]:
     """氏名候補（呼び名・表示名など）でSTORES注文を検索する。"""
     import time as _time
@@ -166,11 +191,128 @@ def find_orders(names: list[str], refresh: bool = False) -> list[dict]:
             continue
         for k in keys:
             if k in full or full in k:
+                status = row[5] if len(row) > 5 else ""
+                product = row[4] if len(row) > 4 else ""
+                cls = classify_order(product, status)
                 results.append({
                     "注文番号": row[0], "注文日時": row[1],
-                    "氏名": (row[2] or "") + " " + (row[3] or ""),
-                    "商品名": row[4] if len(row) > 4 else "",
-                    "ステータス": row[5] if len(row) > 5 else "",
+                    "氏名": ((row[2] or "") + " " + (row[3] or "")).strip(),
+                    "商品名": product, "ステータス": status,
+                    "有効": cls["valid"], "コース": cls["course"], "アップセル": cls["is_upsell"],
                 })
                 break
-    return results[-5:]  # 直近5件まで
+    return results[-8:]  # 直近8件まで
+
+
+def order_summary(names: list[str]) -> dict:
+    """画面バッジ用の購入状況サマリを返す。"""
+    orders = find_orders(names)
+    valid = [o for o in orders if o["有効"] and not o["アップセル"]]
+    upsell = [o for o in orders if o["有効"] and o["アップセル"]]
+    cancelled = [o for o in orders if o["ステータス"] == "キャンセル"]
+    unpaid = [o for o in orders if o["ステータス"] not in VALID_ORDER_STATUS and o["ステータス"] != "キャンセル"]
+    if valid:
+        latest = valid[-1]
+        state = "purchased"
+        label = f"✔ 購入確認済み：{latest['コース']}（{latest['ステータス']}・{latest['注文日時'][:10]}）"
+    elif upsell:
+        state = "upsell_only"
+        label = f"✔ 特典購入あり：{upsell[-1]['商品名']}"
+    elif cancelled:
+        state = "cancelled"
+        label = "⚠️ この名前の注文はキャンセルされています"
+    elif unpaid:
+        state = "unpaid"
+        label = f"⚠️ 未確定の注文があります（{unpaid[-1]['ステータス']}）"
+    else:
+        state = "none"
+        label = "該当する注文が見つかりません"
+    return {"state": state, "label": label, "orders": orders}
+
+
+# ── 鑑定購入者リストへの行追加・ヒアリング転記 ──────────────────
+
+def _buyer_ws():
+    return _get_client().open_by_key(BUYER_LIST_SHEET_ID).worksheet(BUYER_WORKSHEET)
+
+
+def _find_buyer_row(ws, names: list[str], order_no: str = ""):
+    """LINE名(B列)またはオーダー番号(G列)で既存行を探す。見つかれば行番号を返す。"""
+    values = ws.get_values(f"A{BUYER_HEADER_ROW + 1}:G")
+    keys = [re.sub(r"\s", "", n) for n in names if n]
+    for i, row in enumerate(values):
+        rownum = BUYER_HEADER_ROW + 1 + i
+        b = re.sub(r"\s", "", row[1]) if len(row) > 1 else ""
+        g = row[6].strip() if len(row) > 6 else ""
+        if order_no and g and g == order_no:
+            return rownum
+        if b and any(b == k or (len(k) >= 3 and k in b) for k in keys):
+            return rownum
+    return None
+
+
+def buyer_preview(names: list[str], order_no: str = "") -> dict:
+    """購入者リスト登録の事前確認（既存行があるか・追記内容）。"""
+    ws = _buyer_ws()
+    existing = _find_buyer_row(ws, names, order_no)
+    col_a = ws.col_values(1)
+    next_no = 1
+    for v in reversed(col_a):
+        if str(v).strip().isdigit():
+            next_no = int(v) + 1
+            break
+    return {"existing_row": existing, "next_row": len(col_a) + 1, "next_no": next_no}
+
+
+def add_buyer_row(line_name: str, customer_name: str, order: dict | None) -> dict:
+    """鑑定購入者リストに新規行を追加する（重複時はスキップ）。"""
+    ws = _buyer_ws()
+    order_no = str(order.get("注文番号")) if order else ""
+    names = [n for n in [customer_name, line_name] if n]
+    existing = _find_buyer_row(ws, names, order_no)
+    if existing:
+        return {"status": "exists", "row": existing}
+
+    col_a = ws.col_values(1)
+    next_row = len(col_a) + 1
+    next_no = 1
+    for v in reversed(col_a):
+        if str(v).strip().isdigit():
+            next_no = int(v) + 1
+            break
+
+    # A:No B:LINE名 C:顧客名 D:LINEチャット E:AIチャット F:受付日 G:オーダー番号 H:鑑定 I:価格 ... M:購入
+    row = [""] * 13
+    row[0] = next_no
+    row[1] = line_name
+    row[2] = customer_name
+    if order:
+        row[6] = order_no
+        row[7] = order.get("コース") or order.get("商品名") or ""
+        row[12] = "○" if order.get("有効") else ""
+    ws.update(range_name=f"A{next_row}:M{next_row}", values=[row], value_input_option="USER_ENTERED")
+    return {"status": "added", "row": next_row, "no": next_no}
+
+
+def transcribe_hearing(line_name: str, customer_name: str, hearing_text: str, order_no: str = "") -> dict:
+    """ヒアリング回答を有料鑑定文作成A列へ転記し、購入者リストの受付日を記録する。"""
+    text = (hearing_text or "").strip()
+    if not text:
+        return {"status": "empty"}
+
+    # 1) 有料鑑定文作成「鑑定文出力」のA列・次の空行へ転記（B列は確認待ち＝自動生成はされない）
+    aws = _get_client().open_by_key(APPRAISAL_SHEET_ID).worksheet(APPRAISAL_WORKSHEET)
+    col_a = aws.col_values(1)
+    arow = len(col_a) + 1
+    aws.update(range_name=f"A{arow}:B{arow}", values=[[text, "確認待ち"]], value_input_option="USER_ENTERED")
+
+    # 2) 鑑定購入者リストの該当行に受付日を記録（見つかった場合のみ）
+    from datetime import datetime, timezone, timedelta
+    today = datetime.now(timezone(timedelta(hours=9))).strftime("%Y/%m/%d")
+    ws = _buyer_ws()
+    names = [n for n in [customer_name, line_name] if n]
+    buyer_row = _find_buyer_row(ws, names, order_no)
+    if buyer_row:
+        ws.update(range_name=f"F{buyer_row}", values=[[today]], value_input_option="USER_ENTERED")
+
+    return {"status": "ok", "appraisal_row": arow, "buyer_row": buyer_row, "date": today}

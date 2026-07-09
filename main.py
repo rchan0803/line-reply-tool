@@ -147,19 +147,21 @@ def profile_text(user_id: str) -> str:
     # 購入者LINEの顧客はSTORESの注文履歴も照合してAIに渡す
     if (user.get("account") or "main") == "paid":
         try:
-            names = [user.get("call_name") or "", user.get("display_name") or ""]
-            orders = sheets_sync.find_orders(names)
-            if orders:
-                lines = [
-                    f"- {o['注文日時']} {o['商品名']}（{o['氏名']} / 注文番号{o['注文番号']} / {o['ステータス']}）"
-                    for o in orders
-                ]
-                text += "\n\n【STORES注文履歴（照合済み）】\n" + "\n".join(lines)
-            else:
-                text += "\n\n【STORES注文履歴】名前一致する注文が見つかりません（購入確認が必要な場合は要注意）"
+            summary = sheets_sync.order_summary(_name_keys(user))
+            lines = [
+                f"- {o['注文日時'][:10]} {o['商品名']}（{o['ステータス']}）"
+                for o in summary["orders"]
+            ]
+            text += "\n\n【STORES購入状況】" + summary["label"]
+            if lines:
+                text += "\n" + "\n".join(lines)
         except Exception as e:
             print(f"[orders] 照合エラー: {e}")
     return text
+
+
+def _name_keys(user: dict) -> list[str]:
+    return [user.get("call_name") or "", user.get("display_name") or ""]
 
 
 def try_elme_sync(user_id: str, account_id: str) -> dict:
@@ -314,7 +316,81 @@ async def api_messages(user_id: str):
     messages = get_messages(user_id)
     draft = get_latest_draft(user_id)
     user = get_user(user_id)
-    return {"messages": messages, "draft": draft, "user": user}
+    order = None
+    if user and (user.get("account") or "main") == "paid":
+        try:
+            order = sheets_sync.order_summary(_name_keys(user))
+            order.pop("orders", None)  # 画面バッジには要約だけ返す
+        except Exception as e:
+            print(f"[orders] badge error: {e}")
+    return {"messages": messages, "draft": draft, "user": user, "order": order}
+
+
+@app.post("/api/buyer-preview/{user_id}")
+async def api_buyer_preview(user_id: str):
+    import asyncio
+    user = get_user(user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    try:
+        summary = await asyncio.to_thread(sheets_sync.order_summary, _name_keys(user))
+        valid = [o for o in summary["orders"] if o["有効"] and not o["アップセル"]]
+        order = valid[-1] if valid else None
+        preview = await asyncio.to_thread(
+            sheets_sync.buyer_preview, _name_keys(user),
+            str(order["注文番号"]) if order else "",
+        )
+        return {
+            "line_name": user.get("display_name") or "",
+            "customer_name": user.get("call_name") or "",
+            "order": order, "order_label": summary["label"],
+            "existing_row": preview["existing_row"], "next_no": preview["next_no"],
+        }
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+@app.post("/api/buyer-add/{user_id}")
+async def api_buyer_add(user_id: str):
+    import asyncio
+    user = get_user(user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    try:
+        summary = await asyncio.to_thread(sheets_sync.order_summary, _name_keys(user))
+        valid = [o for o in summary["orders"] if o["有効"] and not o["アップセル"]]
+        order = valid[-1] if valid else None
+        result = await asyncio.to_thread(
+            sheets_sync.add_buyer_row,
+            user.get("display_name") or "", user.get("call_name") or "", order,
+        )
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+class HearingRequest(BaseModel):
+    text: str
+
+
+@app.post("/api/hearing-transcribe/{user_id}")
+async def api_hearing_transcribe(user_id: str, req: HearingRequest):
+    import asyncio
+    user = get_user(user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    try:
+        summary = await asyncio.to_thread(sheets_sync.order_summary, _name_keys(user))
+        valid = [o for o in summary["orders"] if o["有効"] and not o["アップセル"]]
+        order_no = str(valid[-1]["注文番号"]) if valid else ""
+        result = await asyncio.to_thread(
+            sheets_sync.transcribe_hearing,
+            user.get("display_name") or "", user.get("call_name") or "",
+            req.text, order_no,
+        )
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
 
 
 @app.post("/api/sync-forms")
