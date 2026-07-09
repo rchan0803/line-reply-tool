@@ -95,7 +95,7 @@ def sync_user(user_id: str, bot_id: str) -> dict:
 
 
 def format_profile(profile_json: str, max_chars: int = 6000) -> str:
-    """プロフィールJSONをAIに渡す文字列に整形する。"""
+    """プロフィールJSONをAIに渡す文字列に整形する（鑑定文本文は除外）。"""
     if not profile_json:
         return ""
     try:
@@ -107,9 +107,29 @@ def format_profile(profile_json: str, max_chars: int = 6000) -> str:
     if tags:
         lines.append("タグ: " + "、".join(tags))
     for f in profile.get("friend_info") or []:
+        title = str(f.get("title") or "")
         value = str(f.get("value") or "").strip()
         if not value:
             continue
-        lines.append(f"{f.get('title')}: {value}")
+        if "鑑定文" in title:  # 鑑定文本文は別枠で全文を渡すのでここでは除外
+            continue
+        lines.append(f"{title}: {value}")
     text = "\n".join(lines)
     return text[:max_chars]
+
+
+def extract_appraisal(profile_json: str, max_chars: int = 20000) -> str:
+    """エルメのプロフィールから鑑定文（鑑定文A/B等）を全文で取り出す。"""
+    if not profile_json:
+        return ""
+    try:
+        profile = json.loads(profile_json)
+    except Exception:
+        return ""
+    parts = []
+    for f in profile.get("friend_info") or []:
+        title = str(f.get("title") or "")
+        value = str(f.get("value") or "").strip()
+        if value and "鑑定文" in title:
+            parts.append(value)
+    return "\n\n".join(parts)[:max_chars]

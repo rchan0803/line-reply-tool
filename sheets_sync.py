@@ -337,3 +337,32 @@ def transcribe_hearing(line_name: str, customer_name: str, hearing_text: str, or
         ws.update(range_name=f"F{buyer_row}", values=[[today]], value_input_option="USER_ENTERED")
 
     return {"status": "ok", "appraisal_row": arow, "buyer_row": buyer_row, "date": today}
+
+
+# 鑑定文出力シートの列（1始まり）: A=お悩み E=現在のご状況 F=潜在的性格
+# G=鑑定パート H=覚醒メソッド I=送付メッセージ
+_APPRAISAL_PARTS = [
+    ("お悩み・ヒアリング内容", 1),
+    ("現在のご状況", 5),
+    ("潜在的性格", 6),
+    ("鑑定パート", 7),
+    ("覚醒メソッド", 8),
+]
+
+
+def read_appraisal(row: int, max_chars: int = 20000) -> str:
+    """有料鑑定文作成「鑑定文出力」の指定行から、鑑定内容の全文を組み立てて返す。"""
+    if not row or row < 2:
+        return ""
+    aws = _get_client().open_by_key(APPRAISAL_SHEET_ID).worksheet(APPRAISAL_WORKSHEET)
+    values = aws.get_values(f"A{row}:I{row}")
+    if not values or not values[0]:
+        return ""
+    r = values[0]
+    parts = []
+    for label, col in _APPRAISAL_PARTS:
+        v = r[col - 1].strip() if len(r) >= col else ""
+        if v:
+            parts.append(f"■{label}\n{v}")
+    text = "\n\n".join(parts)
+    return text[:max_chars]

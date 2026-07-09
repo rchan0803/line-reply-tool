@@ -17,7 +17,7 @@ load_dotenv()
 from database import (
     init_db, upsert_user, save_message, save_draft,
     get_conversations, get_messages, get_latest_draft, get_user,
-    search_conversations, set_call_name,
+    search_conversations, set_call_name, set_appraisal_row,
 )
 from sheets import load_manuals, get_manual_content
 from claude_service import generate_reply, refine_reply
@@ -38,7 +38,8 @@ PAID_RULES = """このアカウントは「購入者専用LINE（VIPルーム）
 - 新規顧客から「（友だち追加）」「（スタンプ）」や挨拶のみが届いた場合は、購入直後の入室とみなし、「相談内容ヒアリング」シートのヒアリング案内テンプレで返信案を作る（返信不要にしない）
 - ヒアリング回答を受領したら「ヒアリング内容受領時」テンプレをもとに受領メッセージを作る
 - 【最重要】鑑定書送付後に、感想・「【特別特典】」への言及や引用・「特典希望」・特典への質問のいずれかが届いたら、感想への返信に続けて、必ず「アップセル提案」テンプレをその顧客の悩み・状況・感想に合わせて書き換えた特典の詳細案内を同じメッセージ内に含める。顧客がまだ鑑定書を読み終えていなくても含める
-- 顧客が明確に辞退した場合のみアップセルはせず、「ダウンセル提案」の利用を検討する"""
+- 顧客が明確に辞退した場合のみアップセルはせず、「ダウンセル提案」の利用を検討する
+- 鑑定書送付後の質問・相談には、【お届けした鑑定内容】が与えられている場合はその見立て・アドバイスと一貫した内容で返信する（鑑定書と矛盾しないこと）"""
 
 ACCOUNTS = {
     "main": {
@@ -164,6 +165,24 @@ def _name_keys(user: dict) -> list[str]:
     return [user.get("call_name") or "", user.get("display_name") or ""]
 
 
+def appraisal_text(user: dict) -> str:
+    """VIP顧客にお届けした鑑定内容の全文を取得する。
+    ①ヒアリング転記時に記録した鑑定シートの行から読む（生成後の全パート）
+    ②行がなければエルメのプロフィールの鑑定文A/Bを全文で使う
+    """
+    if not user or (user.get("account") or "main") != "paid":
+        return ""
+    row = user.get("appraisal_row")
+    if row:
+        try:
+            text = sheets_sync.read_appraisal(int(row))
+            if text:
+                return text
+        except Exception as e:
+            print(f"[appraisal] sheet read error: {e}")
+    return elme_sync.extract_appraisal(user.get("profile") or "")
+
+
 def try_elme_sync(user_id: str, account_id: str) -> dict:
     """エルメから履歴・プロフィールを取り込む（失敗しても処理は止めない）。"""
     try:
@@ -272,6 +291,7 @@ async def process_webhook(account_id: str, request: Request):
             customer_name=preferred_name(user_id),
             customer_profile=profile_text(user_id),
             account_rules=acc.get("rules", ""),
+            appraisal_content=appraisal_text(get_user(user_id)),
         )
         save_draft(user_id, draft)
 
@@ -388,6 +408,9 @@ async def api_hearing_transcribe(user_id: str, req: HearingRequest):
             user.get("display_name") or "", user.get("call_name") or "",
             req.text, order_no,
         )
+        # 鑑定内容の紐づけのため、転記先の行を顧客に記録
+        if result.get("appraisal_row"):
+            set_appraisal_row(user_id, result["appraisal_row"])
         return result
     except Exception as e:
         raise HTTPException(status_code=502, detail=str(e))
@@ -440,6 +463,7 @@ async def api_regenerate(user_id: str):
         customer_name=preferred_name(user_id),
         customer_profile=profile_text(user_id),
         account_rules=ACCOUNTS.get(account, {}).get("rules", ""),
+        appraisal_content=appraisal_text(user),
     )
     save_draft(user_id, draft)
     return {"draft": draft}
@@ -520,6 +544,7 @@ async def api_refine(user_id: str, req: RefineRequest):
     draft = refine_reply(
         history, manual, preferred_name(user_id), req.draft, instruction,
         customer_profile=profile_text(user_id),
+        appraisal_content=appraisal_text(user),
     )
     save_draft(user_id, draft)
     return {"draft": draft}

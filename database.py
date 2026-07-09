@@ -50,6 +50,8 @@ def init_db():
         conn.execute("ALTER TABLE users ADD COLUMN elme_friend_id INTEGER")
     if "profile" not in cols:
         conn.execute("ALTER TABLE users ADD COLUMN profile TEXT")
+    if "appraisal_row" not in cols:
+        conn.execute("ALTER TABLE users ADD COLUMN appraisal_row INTEGER")
     mcols = [r[1] for r in conn.execute("PRAGMA table_info(messages)").fetchall()]
     if "elme_message_id" not in mcols:
         conn.execute("ALTER TABLE messages ADD COLUMN elme_message_id INTEGER")
@@ -125,6 +127,13 @@ def set_elme_friend(user_id: str, elme_friend_id: int):
 def set_profile(user_id: str, profile_json: str):
     conn = get_conn()
     conn.execute("UPDATE users SET profile = ? WHERE user_id = ?", (profile_json, user_id))
+    conn.commit()
+    conn.close()
+
+
+def set_appraisal_row(user_id: str, row: int):
+    conn = get_conn()
+    conn.execute("UPDATE users SET appraisal_row = ? WHERE user_id = ?", (row, user_id))
     conn.commit()
     conn.close()
 

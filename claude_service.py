@@ -41,7 +41,7 @@ B) 返信案の本文のみ（1文字目から顧客に送る文章で始める�
 - 返信案の本文のみを出力してください（「返信案：」などのラベル、説明文、前置きは一切付けない）"""
 
 
-def generate_reply(messages: list[dict], manual: str, customer_name: str = "", customer_profile: str = "", account_rules: str = "") -> str:
+def generate_reply(messages: list[dict], manual: str, customer_name: str = "", customer_profile: str = "", account_rules: str = "", appraisal_content: str = "") -> str:
     system = [
         {
             "type": "text",
@@ -62,6 +62,16 @@ def generate_reply(messages: list[dict], manual: str, customer_name: str = "", c
         })
     if account_rules:
         system.append({"type": "text", "text": "【このアカウントの運用ルール】\n" + account_rules})
+    if appraisal_content:
+        system.append({
+            "type": "text",
+            "text": (
+                "この顧客に既にお届けした鑑定内容の全文です。鑑定書送付後のやり取りでは、"
+                "この鑑定内容と矛盾しないように、内容を踏まえて返信を作成してください"
+                "（鑑定書に書いた見立て・アドバイスと一貫性を保つ）。ただし鑑定文そのものを長々と再掲はしないこと:\n"
+                + appraisal_content
+            ),
+        })
     if customer_profile:
         system.append({
             "type": "text",
@@ -115,6 +125,7 @@ def refine_reply(
     current_draft: str,
     instruction: str,
     customer_profile: str = "",
+    appraisal_content: str = "",
 ) -> str:
     """オペレーターの指示に従って現在の返信案を修正する。"""
     system = [
@@ -131,6 +142,7 @@ def refine_reply(
                 "指示された箇所以外は、できるだけ元の文章を保ってください。"
                 + (f"\nこの顧客の呼び名は「{customer_name}」です。" if customer_name else "")
                 + (f"\n\n【顧客の登録情報（参考）】\n{customer_profile}" if customer_profile else "")
+                + (f"\n\n【お届けした鑑定内容（これと矛盾しないこと）】\n{appraisal_content}" if appraisal_content else "")
             ),
         },
     ]
