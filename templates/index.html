@@ -461,7 +461,7 @@ async function selectConv(userId, displayName) {
   document.getElementById('chat-header-name').textContent = displayName;
   document.getElementById('call-name-box').style.display = 'flex';
   document.getElementById('call-name-input').value = '';
-  document.getElementById('vip-bar').style.display = (currentAccount === 'paid') ? 'flex' : 'none';
+  document.getElementById('vip-bar').style.display = 'none';  // loadChatで購入状況に応じて表示
   ['draft-text', 'copy-btn', 'regen-btn', 'instruction', 'fix-btn'].forEach(id => {
     document.getElementById(id).disabled = false;
   });
@@ -544,11 +544,23 @@ async function loadChat(force) {
     cn.value = data.user.call_name || '';
   }
 
-  // 購入状況バッジ（VIPのみ）
-  if (currentAccount === 'paid' && data.order) {
+  // 購入状況バッジ ＋ VIP操作ボタン
+  // VIP: 常に表示（バッジ＋ボタン）。公式LINE: 注文が見つかった時だけバッジ表示（ボタンなし）
+  const bar = document.getElementById('vip-bar');
+  const isPaid = currentAccount === 'paid';
+  const hasOrder = data.order && data.order.state && data.order.state !== 'none';
+  if (isPaid || hasOrder) {
+    bar.style.display = 'flex';
     const badge = document.getElementById('order-badge');
-    badge.className = 'order-badge ' + (data.order.state || 'none');
-    badge.textContent = data.order.label || '購入状況不明';
+    if (data.order) {
+      badge.className = 'order-badge ' + (data.order.state || 'none');
+      badge.textContent = data.order.label || '購入状況不明';
+    }
+    // 登録・ヒアリング転記ボタンはVIPのみ
+    document.getElementById('buyer-btn').style.display = isPaid ? '' : 'none';
+    document.getElementById('hearing-btn').style.display = isPaid ? '' : 'none';
+  } else {
+    bar.style.display = 'none';
   }
 }
 

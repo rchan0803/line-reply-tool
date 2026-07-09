@@ -317,7 +317,7 @@ async def api_messages(user_id: str):
     draft = get_latest_draft(user_id)
     user = get_user(user_id)
     order = None
-    if user and (user.get("account") or "main") == "paid":
+    if user:
         try:
             order = sheets_sync.order_summary(_name_keys(user))
             order.pop("orders", None)  # 画面バッジには要約だけ返す

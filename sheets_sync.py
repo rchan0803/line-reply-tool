@@ -251,21 +251,41 @@ def _find_buyer_row(ws, names: list[str], order_no: str = ""):
     return None
 
 
+def _first_empty_buyer_row(ws):
+    """顧客データが未記入の最初の行を返す。
+    No.(A)だけドラッグ済みの空行を追記先にする。既存顧客（顧客名等が入った行）は上書きしない。
+    判定: B(LINE名)/C(顧客名)/F(受付日)/G(オーダー番号)/H(鑑定)/J(お悩み) がすべて空。
+    """
+    rng = ws.get_values(f"A{BUYER_HEADER_ROW + 1}:J")
+    for i, r in enumerate(rng):
+        def g(c):
+            return r[c].strip() if len(r) > c else ""
+        if not g(1) and not g(2) and not g(5) and not g(6) and not g(7) and not g(9):
+            return BUYER_HEADER_ROW + 1 + i
+    return len(ws.col_values(1)) + 1
+
+
+def _next_buyer_no(ws):
+    for v in reversed(ws.col_values(1)):
+        if str(v).strip().isdigit():
+            return int(v) + 1
+    return 1
+
+
 def buyer_preview(names: list[str], order_no: str = "") -> dict:
-    """購入者リスト登録の事前確認（既存行があるか・追記内容）。"""
+    """購入者リスト登録の事前確認（既存行があるか・追記先）。"""
     ws = _buyer_ws()
     existing = _find_buyer_row(ws, names, order_no)
-    col_a = ws.col_values(1)
-    next_no = 1
-    for v in reversed(col_a):
-        if str(v).strip().isdigit():
-            next_no = int(v) + 1
-            break
-    return {"existing_row": existing, "next_row": len(col_a) + 1, "next_no": next_no}
+    target = _first_empty_buyer_row(ws)
+    # 追記先行に既にNo.があればそれを使い、なければ採番
+    a = ws.col_values(1)
+    existing_no = a[target - 1].strip() if target - 1 < len(a) else ""
+    next_no = existing_no if existing_no.isdigit() else str(_next_buyer_no(ws))
+    return {"existing_row": existing, "next_row": target, "next_no": next_no}
 
 
 def add_buyer_row(line_name: str, customer_name: str, order: dict | None) -> dict:
-    """鑑定購入者リストに新規行を追加する（重複時はスキップ）。"""
+    """鑑定購入者リストのB列が空の最初の行に登録する（重複時はスキップ）。"""
     ws = _buyer_ws()
     order_no = str(order.get("注文番号")) if order else ""
     names = [n for n in [customer_name, line_name] if n]
@@ -273,25 +293,26 @@ def add_buyer_row(line_name: str, customer_name: str, order: dict | None) -> dic
     if existing:
         return {"status": "exists", "row": existing}
 
-    col_a = ws.col_values(1)
-    next_row = len(col_a) + 1
-    next_no = 1
-    for v in reversed(col_a):
-        if str(v).strip().isdigit():
-            next_no = int(v) + 1
-            break
+    target = _first_empty_buyer_row(ws)
+    a = ws.col_values(1)
+    existing_no = a[target - 1].strip() if target - 1 < len(a) else ""
 
-    # A:No B:LINE名 C:顧客名 D:LINEチャット E:AIチャット F:受付日 G:オーダー番号 H:鑑定 I:価格 ... M:購入
-    row = [""] * 13
-    row[0] = next_no
-    row[1] = line_name
-    row[2] = customer_name
+    # B:LINE名 C:顧客名 F:受付日 G:オーダー番号 H:鑑定 ... M:購入（A列のNo.は既存があれば温存）
+    if not existing_no.isdigit():
+        ws.update(range_name=f"A{target}", values=[[_next_buyer_no(ws)]], value_input_option="USER_ENTERED")
+        used_no = _next_buyer_no(ws) - 1
+    else:
+        used_no = int(existing_no)
+
+    row_bm = [""] * 12  # B..M
+    row_bm[0] = line_name       # B
+    row_bm[1] = customer_name   # C
     if order:
-        row[6] = order_no
-        row[7] = order.get("コース") or order.get("商品名") or ""
-        row[12] = "○" if order.get("有効") else ""
-    ws.update(range_name=f"A{next_row}:M{next_row}", values=[row], value_input_option="USER_ENTERED")
-    return {"status": "added", "row": next_row, "no": next_no}
+        row_bm[5] = order_no                                    # G
+        row_bm[6] = order.get("コース") or order.get("商品名") or ""  # H
+        row_bm[11] = "○" if order.get("有効") else ""            # M
+    ws.update(range_name=f"B{target}:M{target}", values=[row_bm], value_input_option="USER_ENTERED")
+    return {"status": "added", "row": target, "no": used_no}
 
 
 def transcribe_hearing(line_name: str, customer_name: str, hearing_text: str, order_no: str = "") -> dict:
