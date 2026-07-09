@@ -148,7 +148,7 @@ def profile_text(user_id: str) -> str:
     # 購入者LINEの顧客はSTORESの注文履歴も照合してAIに渡す
     if (user.get("account") or "main") == "paid":
         try:
-            summary = sheets_sync.order_summary(_name_keys(user))
+            summary = sheets_sync.order_summary(_name_keys(user), extra_text=_inbound_text(user["user_id"]))
             lines = [
                 f"- {o['注文日時'][:10]} {o['商品名']}（{o['ステータス']}）"
                 for o in summary["orders"]
@@ -163,6 +163,12 @@ def profile_text(user_id: str) -> str:
 
 def _name_keys(user: dict) -> list[str]:
     return [user.get("call_name") or "", user.get("display_name") or ""]
+
+
+def _inbound_text(user_id: str, limit: int = 20) -> str:
+    """顧客が送ってきたメッセージ本文（購入時の名前が含まれることがある）をまとめる。"""
+    msgs = get_messages(user_id, limit=limit)
+    return " ".join(m["content"] for m in msgs if m["direction"] == "inbound")
 
 
 def appraisal_text(user: dict) -> str:
@@ -339,7 +345,7 @@ async def api_messages(user_id: str):
     order = None
     if user:
         try:
-            order = sheets_sync.order_summary(_name_keys(user))
+            order = sheets_sync.order_summary(_name_keys(user), extra_text=_inbound_text(user_id))
             order.pop("orders", None)  # 画面バッジには要約だけ返す
         except Exception as e:
             print(f"[orders] badge error: {e}")

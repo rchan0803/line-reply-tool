@@ -173,40 +173,43 @@ def classify_order(product_name: str, status: str) -> dict:
     return {"valid": valid, "is_upsell": is_upsell, "course": course}
 
 
-def find_orders(names: list[str], refresh: bool = False) -> list[dict]:
-    """氏名候補（呼び名・表示名など）でSTORES注文を検索する。"""
+def find_orders(names: list[str], refresh: bool = False, extra_text: str = "") -> list[dict]:
+    """氏名候補（呼び名・表示名など）でSTORES注文を検索する。
+    extra_text（顧客のメッセージ本文など）に注文者名が含まれていれば、それも一致とみなす。
+    """
     import time as _time
     if _orders_cache["rows"] is None or refresh or _time.time() - _orders_cache["at"] > _ORDERS_TTL:
         _orders_cache["rows"] = _load_orders()
         _orders_cache["at"] = _time.time()
     results = []
     keys = [re.sub(r"\s", "", n) for n in names if n and len(re.sub(r"\s", "", n)) >= 2]
-    if not keys:
-        return results
+    text = re.sub(r"\s", "", extra_text or "")
     for row in _orders_cache["rows"]:
         if len(row) < 5:
             continue
         full = re.sub(r"\s", "", (row[2] or "") + (row[3] or ""))  # 姓+名
         if not full:
             continue
-        for k in keys:
-            if k in full or full in k:
-                status = row[5] if len(row) > 5 else ""
-                product = row[4] if len(row) > 4 else ""
-                cls = classify_order(product, status)
-                results.append({
-                    "注文番号": row[0], "注文日時": row[1],
-                    "氏名": ((row[2] or "") + " " + (row[3] or "")).strip(),
-                    "商品名": product, "ステータス": status,
-                    "有効": cls["valid"], "コース": cls["course"], "アップセル": cls["is_upsell"],
-                })
-                break
+        matched = any(k in full or full in k for k in keys)
+        # 顧客が送った名前（メッセージ本文）に注文者名（3文字以上）が含まれる場合も一致
+        if not matched and len(full) >= 3 and text and full in text:
+            matched = True
+        if matched:
+            status = row[5] if len(row) > 5 else ""
+            product = row[4] if len(row) > 4 else ""
+            cls = classify_order(product, status)
+            results.append({
+                "注文番号": row[0], "注文日時": row[1],
+                "氏名": ((row[2] or "") + " " + (row[3] or "")).strip(),
+                "商品名": product, "ステータス": status,
+                "有効": cls["valid"], "コース": cls["course"], "アップセル": cls["is_upsell"],
+            })
     return results[-8:]  # 直近8件まで
 
 
-def order_summary(names: list[str]) -> dict:
+def order_summary(names: list[str], extra_text: str = "") -> dict:
     """画面バッジ用の購入状況サマリを返す。"""
-    orders = find_orders(names)
+    orders = find_orders(names, extra_text=extra_text)
     valid = [o for o in orders if o["有効"] and not o["アップセル"]]
     upsell = [o for o in orders if o["有効"] and o["アップセル"]]
     cancelled = [o for o in orders if o["ステータス"] == "キャンセル"]
