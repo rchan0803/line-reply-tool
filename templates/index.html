@@ -689,14 +689,14 @@ async function regenerate() {
   btn.textContent = '生成中...';
   try {
     const res = await fetch(`/api/regenerate/${currentUserId}`, { method: 'POST' });
-    if (!res.ok) throw new Error();
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || '');
     const data = await res.json();
     document.getElementById('draft-text').value = data.draft;
     draftEdited = false;
     document.getElementById('draft-time').textContent = `生成: ${formatTime(new Date().toISOString())}`;
     showToast('返信案を再生成しました');
   } catch (e) {
-    showToast('エラーが発生しました');
+    showToast(e.message || 'エラーが発生しました');
   } finally {
     btn.disabled = false;
     btn.textContent = '再生成';
@@ -720,7 +720,7 @@ async function refineDraft() {
         draft: document.getElementById('draft-text').value,
       }),
     });
-    if (!res.ok) throw new Error();
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || '');
     const data = await res.json();
     document.getElementById('draft-text').value = data.draft;
     draftEdited = false;
@@ -728,7 +728,7 @@ async function refineDraft() {
     document.getElementById('draft-time').textContent = `生成: ${formatTime(new Date().toISOString())}`;
     showToast('修正しました');
   } catch (e) {
-    showToast('エラーが発生しました');
+    showToast(e.message || 'エラーが発生しました');
   } finally {
     btn.disabled = false;
     btn.textContent = 'この指示で修正してもらう';

@@ -549,6 +549,19 @@ async def api_call_name(user_id: str, req: CallNameRequest):
     return {"status": "ok", "call_name": req.name.strip()}
 
 
+def raise_friendly_ai_error(e: Exception):
+    """Claude APIのエラーを、画面に出せる日本語メッセージに変換して投げ直す。"""
+    text = str(e)
+    if "credit balance" in text:
+        raise HTTPException(
+            status_code=402,
+            detail="AIの利用残高が不足しています。Anthropicコンソール（console.anthropic.com）でクレジットをチャージしてください",
+        )
+    if "rate_limit" in text or "overloaded" in text.lower():
+        raise HTTPException(status_code=503, detail="AIが混み合っています。少し待ってからもう一度お試しください")
+    raise HTTPException(status_code=502, detail=f"AIエラー: {text[:200]}")
+
+
 @app.post("/api/regenerate/{user_id}")
 async def api_regenerate(user_id: str):
     history = get_messages(user_id)
@@ -557,13 +570,16 @@ async def api_regenerate(user_id: str):
     user = get_user(user_id)
     account = (user.get("account") if user else None) or "main"
     manual = get_manual_or_reload(account)
-    draft = generate_reply(
-        history, manual,
-        customer_name=preferred_name(user_id),
-        customer_profile=profile_text(user_id),
-        account_rules=ACCOUNTS.get(account, {}).get("rules", ""),
-        appraisal_content=appraisal_text(user),
-    )
+    try:
+        draft = generate_reply(
+            history, manual,
+            customer_name=preferred_name(user_id),
+            customer_profile=profile_text(user_id),
+            account_rules=ACCOUNTS.get(account, {}).get("rules", ""),
+            appraisal_content=appraisal_text(user),
+        )
+    except Exception as e:
+        raise_friendly_ai_error(e)
     save_draft(user_id, draft)
     return {"draft": draft}
 
@@ -640,11 +656,14 @@ async def api_refine(user_id: str, req: RefineRequest):
     user = get_user(user_id)
     account = (user.get("account") if user else None) or "main"
     manual = get_manual_or_reload(account)
-    draft = refine_reply(
-        history, manual, preferred_name(user_id), req.draft, instruction,
-        customer_profile=profile_text(user_id),
-        appraisal_content=appraisal_text(user),
-    )
+    try:
+        draft = refine_reply(
+            history, manual, preferred_name(user_id), req.draft, instruction,
+            customer_profile=profile_text(user_id),
+            appraisal_content=appraisal_text(user),
+        )
+    except Exception as e:
+        raise_friendly_ai_error(e)
     save_draft(user_id, draft)
     return {"draft": draft}
 
