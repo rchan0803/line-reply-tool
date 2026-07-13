@@ -357,6 +357,17 @@
 <div class="toast" id="toast"></div>
 
 <script>
+// ログインが切れた状態でAPIを呼んだらログイン画面へ移動する
+const _origFetch = window.fetch.bind(window);
+window.fetch = async (...args) => {
+  const res = await _origFetch(...args);
+  if (res.status === 401) {
+    location.href = '/login';
+    throw new Error('unauthorized');
+  }
+  return res;
+};
+
 let currentUserId = null;
 let currentName = '';
 let currentAccount = 'main';

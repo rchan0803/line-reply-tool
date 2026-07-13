@@ -110,18 +110,85 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 
 
-# ─── Basic認証（/webhook 以外を保護） ─────────────────────────
+# ─── ログイン認証（/webhook 以外を保護） ─────────────────────────
+# ブラウザのBasic認証ダイアログは再起動のたびに出て使いづらいため、
+# ログイン画面 + 長期Cookie方式にした。パスワードを変えると全Cookieが失効する。
+
+SESSION_COOKIE = "session"
+SESSION_MAX_AGE = 60 * 60 * 24 * 180  # 180日
+
+
+def session_token() -> str:
+    admin_password = os.getenv("ADMIN_PASSWORD", "")
+    return hmac.new(admin_password.encode(), b"session-v1", hashlib.sha256).hexdigest()
+
+
+LOGIN_HTML = """<!DOCTYPE html>
+<html lang="ja"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ログイン - LINE返信案ツール</title>
+<style>
+  body{margin:0;min-height:100vh;display:grid;place-items:center;background:#F2F4F0;
+       font-family:"Hiragino Kaku Gothic ProN","Yu Gothic UI",Meiryo,sans-serif}
+  .box{background:#fff;border-radius:16px;box-shadow:0 8px 30px rgba(0,0,0,.08);
+       padding:36px 34px;width:min(360px,88vw);text-align:center}
+  h1{font-size:17px;margin:0 0 4px;color:#222}
+  p{font-size:12px;color:#888;margin:0 0 22px}
+  input{width:100%;box-sizing:border-box;font-size:15px;padding:12px 14px;
+        border:1.5px solid #ddd;border-radius:10px;margin-bottom:14px;text-align:center}
+  input:focus{outline:none;border-color:#06C755}
+  button{width:100%;font-size:15px;font-weight:700;padding:12px;border:none;cursor:pointer;
+         border-radius:10px;background:#06C755;color:#fff}
+  button:hover{filter:brightness(1.05)}
+  .err{color:#D33;font-size:12.5px;margin:0 0 14px}
+</style></head><body>
+<form class="box" method="post" action="/login">
+  <h1>LINE 返信案ツール</h1>
+  <p>パスワードを入力してください（一度入れると記憶されます）</p>
+  {error}
+  <input type="password" name="password" placeholder="パスワード" autofocus autocomplete="current-password">
+  <button type="submit">ログイン</button>
+</form></body></html>"""
+
+
+@app.get("/login")
+async def login_page():
+    return HTMLResponse(LOGIN_HTML.replace("{error}", ""))
+
+
+@app.post("/login")
+async def login_submit(request: Request):
+    import secrets as _secrets
+    form = await request.form()
+    password = str(form.get("password", "")).strip()
+    admin_password = os.getenv("ADMIN_PASSWORD", "")
+    if admin_password and _secrets.compare_digest(password, admin_password):
+        resp = RedirectResponse("/", status_code=303)
+        resp.set_cookie(
+            SESSION_COOKIE, session_token(),
+            max_age=SESSION_MAX_AGE, httponly=True, secure=True, samesite="lax",
+        )
+        return resp
+    return HTMLResponse(LOGIN_HTML.replace(
+        "{error}", '<p class="err">パスワードが違います。もう一度お試しください。</p>'))
+
 
 @app.middleware("http")
-async def basic_auth_middleware(request: Request, call_next):
+async def auth_middleware(request: Request, call_next):
     import secrets as _secrets
     from fastapi.responses import Response as PlainResponse
 
     admin_password = os.getenv("ADMIN_PASSWORD", "")
+    path = request.url.path
     # /webhook系 はLINEからの通知用なので認証不要（署名検証で保護済み）
-    if request.url.path.startswith("/webhook") or not admin_password:
+    if path.startswith("/webhook") or path == "/login" or not admin_password:
         return await call_next(request)
 
+    cookie = request.cookies.get(SESSION_COOKIE, "")
+    if cookie and _secrets.compare_digest(cookie, session_token()):
+        return await call_next(request)
+
+    # 旧方式（Basic認証ヘッダ付きURL等）も引き続き通す
     auth = request.headers.get("Authorization", "")
     if auth.startswith("Basic "):
         try:
@@ -132,10 +199,10 @@ async def basic_auth_middleware(request: Request, call_next):
         except Exception:
             pass
 
-    return PlainResponse(
-        status_code=401,
-        headers={"WWW-Authenticate": 'Basic realm="line-reply-tool"'},
-    )
+    # APIはリダイレクトせず401（ブラウザのダイアログを出さないようWWW-Authenticateは付けない）
+    if path.startswith("/api/"):
+        return PlainResponse(status_code=401)
+    return RedirectResponse("/login", status_code=303)
 
 
 # ─── Utilities ────────────────────────────────────────────────
