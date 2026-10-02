@@ -1,0 +1,724 @@
+<title>ミラとれんじゅの運営盤</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Old+Mincho:wght@400;600;700&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap">
+<style>
+  :root{
+    color-scheme: light;
+    --ground:#F1F1F6; --panel:#FFFFFF; --sunk:#F6F6FA;
+    --ink:#1A1B2E; --ink-2:#4B4D66; --ink-3:#74768D;
+    --rule:#DCDBE6; --hair:#EAE9F1;
+    --mira:#6B4FC4; --mira-soft:rgba(107,79,196,.13);
+    --renju:#00896E; --renju-soft:rgba(0,137,110,.13);
+    --gold:#9C7A2E; --gold-hair:rgba(156,122,46,.45);
+    --ok:#1F7A4D; --warn:#A8700A; --down:#AC3B34;
+    --ok-soft:rgba(31,122,77,.12); --warn-soft:rgba(168,112,10,.13); --down-soft:rgba(172,59,52,.12);
+    --track:#E4E3EC;
+    --shadow:0 1px 2px rgba(26,27,46,.05), 0 8px 24px -16px rgba(26,27,46,.22);
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      color-scheme: dark;
+      --ground:#13151E; --panel:#1B1E29; --sunk:#171A24;
+      --ink:#ECEDF5; --ink-2:#B5B7CA; --ink-3:#8B8EA5;
+      --rule:#2F3344; --hair:#262A38;
+      --mira:#8F7CE0; --mira-soft:rgba(143,124,224,.18);
+      --renju:#199A8E; --renju-soft:rgba(25,154,142,.18);
+      --gold:#C9A659; --gold-hair:rgba(201,166,89,.4);
+      --ok:#3FA873; --warn:#D2A03C; --down:#DE7A70;
+      --ok-soft:rgba(63,168,115,.16); --warn-soft:rgba(210,160,60,.16); --down-soft:rgba(222,122,112,.16);
+      --track:#2B2F3E;
+      --shadow:0 1px 2px rgba(0,0,0,.3), 0 10px 28px -18px rgba(0,0,0,.6);
+    }
+  }
+  :root[data-theme="dark"]{
+    color-scheme: dark;
+    --ground:#13151E; --panel:#1B1E29; --sunk:#171A24;
+    --ink:#ECEDF5; --ink-2:#B5B7CA; --ink-3:#8B8EA5;
+    --rule:#2F3344; --hair:#262A38;
+    --mira:#8F7CE0; --mira-soft:rgba(143,124,224,.18);
+    --renju:#199A8E; --renju-soft:rgba(25,154,142,.18);
+    --gold:#C9A659; --gold-hair:rgba(201,166,89,.4);
+    --ok:#3FA873; --warn:#D2A03C; --down:#DE7A70;
+    --ok-soft:rgba(63,168,115,.16); --warn-soft:rgba(210,160,60,.16); --down-soft:rgba(222,122,112,.16);
+    --track:#2B2F3E;
+    --shadow:0 1px 2px rgba(0,0,0,.3), 0 10px 28px -18px rgba(0,0,0,.6);
+  }
+
+  *{ box-sizing:border-box; }
+  body{
+    margin:0; background:var(--ground); color:var(--ink);
+    font-family:"Zen Kaku Gothic New","Hiragino Kaku Gothic ProN","Yu Gothic UI","Meiryo",sans-serif;
+    font-size:14px; line-height:1.75; -webkit-font-smoothing:antialiased;
+  }
+  .wrap{ max-width:1080px; margin:0 auto; padding-block:0 56px; padding-left:20px; padding-right:20px; }
+
+  header{ padding-block:32px 20px; border-bottom:1px solid var(--rule); }
+  .eyebrow{ font-size:11px; letter-spacing:.18em; color:var(--ink-3); }
+  h1{ font-family:"Zen Old Mincho","Hiragino Mincho ProN","Yu Mincho",serif;
+      font-size:clamp(26px,5.2vw,36px); font-weight:600; line-height:1.3; margin:6px 0 0;
+      letter-spacing:.02em; text-wrap:balance; }
+  .h-rule{ height:1px; background:linear-gradient(90deg,var(--gold-hair),transparent 72%); margin:14px 0 12px; }
+  .h-meta{ display:flex; flex-wrap:wrap; gap:4px 18px; font-size:12.5px; color:var(--ink-3); }
+
+  section{ margin-top:32px; }
+  .s-head{ display:flex; align-items:baseline; justify-content:space-between; gap:12px; margin-bottom:12px; }
+  h2{ font-family:"Zen Old Mincho","Hiragino Mincho ProN","Yu Mincho",serif; font-size:17px; font-weight:600;
+      margin:0; letter-spacing:.03em; }
+  .s-note{ font-size:12px; color:var(--ink-3); text-align:right; }
+
+  .tiles{ display:grid; grid-template-columns:repeat(4,1fr); gap:1px; background:var(--rule);
+    border:1px solid var(--rule); border-radius:4px; overflow:hidden; box-shadow:var(--shadow); margin-top:22px; }
+  @media (max-width:780px){ .tiles{ grid-template-columns:1fr 1fr; } }
+  .tile{ background:var(--panel); padding:15px 17px 14px; position:relative; }
+  .tile::before{ content:""; position:absolute; left:0; top:0; bottom:0; width:3px; background:transparent; }
+  .tile.bad::before{ background:var(--down); }
+  .tile.warn::before{ background:var(--warn); }
+  .tile.good::before{ background:var(--ok); }
+  .tile .k{ font-size:11.5px; color:var(--ink-3); letter-spacing:.06em; }
+  .tile .v{ font-family:"Zen Old Mincho","Hiragino Mincho ProN","Yu Mincho",serif; font-weight:600;
+    font-size:30px; line-height:1.15; margin-top:5px; font-variant-numeric:tabular-nums; }
+  .tile .v small{ font-size:13px; font-weight:400; margin-left:3px; color:var(--ink-2); }
+  .tile.bad .v{ color:var(--down); } .tile.warn .v{ color:var(--warn); }
+  .tile .sub{ font-size:11.5px; color:var(--ink-3); margin-top:4px; }
+
+  .cols{ display:grid; grid-template-columns:1.15fr .85fr; gap:18px; align-items:start; }
+  .cols.even{ grid-template-columns:1fr 1fr; }
+  @media (max-width:880px){ .cols, .cols.even{ grid-template-columns:1fr; } }
+  .panel{ background:var(--panel); border:1px solid var(--rule); border-radius:4px; box-shadow:var(--shadow); }
+  .panel > .p-head{ padding:13px 18px 11px; border-bottom:1px solid var(--hair); display:flex;
+    justify-content:space-between; align-items:baseline; gap:10px; }
+  .panel > .p-head h2{ font-size:15px; }
+  .p-body{ padding:6px 18px 16px; }
+  .p-body.pad{ padding-top:14px; }
+
+  .big{ display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; padding:4px 0 2px; }
+  .big .n{ font-family:"Zen Old Mincho","Hiragino Mincho ProN","Yu Mincho",serif; font-size:34px;
+    font-weight:600; font-variant-numeric:tabular-nums; letter-spacing:.01em; }
+  .big .u{ font-size:13px; color:var(--ink-2); }
+  .delta{ font-size:12px; padding:2px 8px; border-radius:3px; background:var(--sunk); color:var(--ink-2); }
+  .delta.up{ background:var(--ok-soft); color:var(--ok); }
+  .delta.dn{ background:var(--down-soft); color:var(--down); }
+
+  .row{ display:flex; gap:10px; padding:9px 0; border-bottom:1px solid var(--hair); align-items:baseline; }
+  .row:last-child{ border-bottom:0; }
+  .row .main{ flex:1; min-width:0; font-size:13px; line-height:1.6; }
+  .row .main .sub{ font-size:11.5px; color:var(--ink-3); overflow:hidden; text-overflow:ellipsis;
+    display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
+  .row .right{ font-size:12px; color:var(--ink-2); font-variant-numeric:tabular-nums; white-space:nowrap; }
+  .chip{ flex:none; font-size:11px; padding:1px 7px; border-radius:3px; background:var(--sunk);
+    color:var(--ink-3); font-variant-numeric:tabular-nums; white-space:nowrap; }
+  .chip.bad{ background:var(--down-soft); color:var(--down); font-weight:500; }
+  .chip.warn{ background:var(--warn-soft); color:var(--warn); font-weight:500; }
+  .chip.mira{ background:var(--mira-soft); color:var(--mira); }
+  .chip.renju{ background:var(--renju-soft); color:var(--renju); }
+
+  .tool{ display:grid; grid-template-columns:auto 1fr auto; gap:3px 11px; padding:12px 0;
+    border-bottom:1px solid var(--hair); align-items:start; }
+  .tool:last-child{ border-bottom:0; }
+  .dot{ width:9px; height:9px; border-radius:50%; margin-top:7px; }
+  .dot.ok{ background:var(--ok); } .dot.warn{ background:var(--warn); }
+  .dot.down{ background:var(--down); } .dot.unknown{ background:var(--ink-3); }
+  .tool .nm{ font-weight:500; font-size:13.5px; }
+  .tool .fact{ grid-column:2; font-size:12.5px; color:var(--ink-2); }
+  .tool .rule{ grid-column:2; font-size:11.5px; color:var(--ink-3); }
+  .state{ font-size:11px; font-weight:500; padding:2px 8px; border-radius:3px; white-space:nowrap; margin-top:2px; }
+  .state.ok{ background:var(--ok-soft); color:var(--ok); }
+  .state.warn{ background:var(--warn-soft); color:var(--warn); }
+  .state.down{ background:var(--down-soft); color:var(--down); }
+  .state.unknown{ background:var(--sunk); color:var(--ink-3); }
+
+  /* 診断 */
+  .diag{ display:flex; gap:12px; padding:13px 0; border-bottom:1px solid var(--hair); align-items:flex-start; }
+  .diag:last-child{ border-bottom:0; }
+  .diag .sev{ flex:none; width:3px; align-self:stretch; border-radius:2px; background:var(--track); }
+  .diag.high .sev{ background:var(--down); } .diag.mid .sev{ background:var(--warn); }
+  .diag.low .sev{ background:var(--ink-3); }
+  .diag .body{ flex:1; min-width:0; }
+  .diag .ttl{ font-size:14px; font-weight:500; }
+  .diag .num{ font-size:12.5px; color:var(--ink-2); font-variant-numeric:tabular-nums; margin-top:2px; }
+  .diag .hint{ font-size:12px; color:var(--ink-3); margin-top:4px; line-height:1.6; }
+  .pct{ flex:none; font-family:"Zen Old Mincho","Yu Mincho",serif; font-size:24px; font-weight:600;
+    font-variant-numeric:tabular-nums; line-height:1.1; text-align:right; min-width:64px; }
+  .diag.high .pct{ color:var(--down); } .diag.mid .pct{ color:var(--warn); } .diag.low .pct{ color:var(--ink-2); }
+
+  /* ファネル */
+  .fn{ padding:12px 0 14px; border-bottom:1px solid var(--hair); }
+  .fn:last-child{ border-bottom:0; }
+  .fn-top{ display:flex; justify-content:space-between; gap:10px; align-items:baseline; }
+  .fn-top .lb{ font-size:13px; }
+  .fn-top .vl{ font-size:13px; font-variant-numeric:tabular-nums; }
+  .fn-top .vl b{ font-size:15px; }
+  .fn-bar{ position:relative; height:10px; border-radius:2px; background:var(--track); margin-top:8px; }
+  .fn-bar > i{ position:absolute; top:0; bottom:0; left:0; border-radius:2px; background:var(--mira); }
+  .fn-bar > .base{ position:absolute; top:-3px; bottom:-3px; width:2px; background:var(--gold); }
+  .fn-rate{ display:flex; justify-content:space-between; font-size:11.5px; color:var(--ink-3); margin-top:5px; }
+  .fn-rate .dn{ color:var(--down); } .fn-rate .up{ color:var(--ok); }
+
+  .cols.fn-cols{ grid-template-columns:.82fr 1.18fr; }
+  @media (max-width:880px){ .cols.fn-cols{ grid-template-columns:1fr; } }
+  #fntable th{ white-space:nowrap; }
+  #fntable td:first-child{ min-width:112px; }
+  #fntable td,#fntable th{ padding:6px 5px; }
+  .cr-head{ display:flex; align-items:baseline; gap:14px; flex-wrap:wrap; }
+  .cr-head .big-n{ font-family:"Zen Old Mincho","Yu Mincho",serif; font-size:40px; font-weight:600;
+    line-height:1.05; font-variant-numeric:tabular-nums; }
+  .cr-bar{ display:flex; height:14px; border-radius:3px; overflow:hidden; margin:12px 0 6px; background:var(--track); }
+  .cr-bar i{ display:block; }
+  .cr-bar .y{ background:var(--ok); } .cr-bar .n{ background:var(--down); }
+  .cr-legend{ display:flex; gap:16px; font-size:12px; color:var(--ink-2); flex-wrap:wrap; }
+  .cr-legend i{ display:inline-block; width:9px; height:9px; border-radius:2px; margin-right:5px; }
+  .topbar{ display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-top:14px; }
+  .btn{ font:inherit; font-size:13px; font-weight:500; cursor:pointer; padding:8px 18px; border-radius:4px;
+    border:1px solid var(--mira); background:var(--mira); color:#fff; }
+  .btn:hover{ filter:brightness(1.07); }
+  .btn[disabled]{ opacity:.6; cursor:default; }
+  .btn.ghost{ background:transparent; color:var(--mira); }
+  .upd{ font-size:12.5px; color:var(--ink-3); }
+  .upd b{ color:var(--ink-2); font-weight:500; }
+  .spin{ display:inline-block; width:12px; height:12px; border:2px solid var(--rule);
+    border-top-color:var(--mira); border-radius:50%; animation:sp .8s linear infinite; vertical-align:-2px; }
+  @keyframes sp{ to{ transform:rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce){ .spin{ animation-duration:3s; } }
+  .chart-wrap{ overflow-x:auto; }
+  svg{ display:block; max-width:100%; }
+  svg text{ font-family:"Zen Kaku Gothic New","Yu Gothic UI",sans-serif; }
+  .legend{ display:flex; gap:14px; font-size:11.5px; color:var(--ink-2); margin-top:6px; }
+  .legend i{ display:inline-block; width:9px; height:9px; border-radius:2px; margin-right:5px; }
+
+  table{ border-collapse:collapse; width:100%; font-size:12.5px; }
+  th,td{ text-align:right; padding:7px 6px; border-bottom:1px solid var(--hair); font-variant-numeric:tabular-nums; }
+  th{ font-weight:500; font-size:11px; color:var(--ink-3); letter-spacing:.06em; }
+  th:first-child,td:first-child{ text-align:left; font-variant-numeric:normal; }
+  tbody tr:last-child td{ border-bottom:0; }
+  .basis{ font-size:11px; color:var(--ink-3); }
+  .more{ font:inherit; font-size:12px; color:var(--ink-2); background:none; border:0; cursor:pointer;
+    padding:10px 0 2px; text-decoration:underline; text-decoration-color:var(--rule); }
+  .more:hover{ color:var(--ink); }
+  :focus-visible{ outline:2px solid var(--mira); outline-offset:2px; }
+  .note{ font-size:11.5px; color:var(--ink-3); margin:10px 0 0; }
+  .warnbar{ background:var(--warn-soft); color:var(--warn); font-size:12px; padding:8px 12px;
+    border-radius:4px; margin-top:12px; }
+  footer{ margin-top:40px; padding-top:18px; border-top:1px solid var(--rule); font-size:12px; color:var(--ink-3); }
+  footer code{ font-size:11.5px; background:var(--sunk); padding:1px 5px; border-radius:3px; color:var(--ink-2); }
+  #tip{ position:fixed; z-index:9; pointer-events:none; opacity:0; transition:opacity .12s;
+    background:var(--panel); border:1px solid var(--rule); box-shadow:var(--shadow); border-radius:4px;
+    padding:7px 10px; font-size:12px; line-height:1.55; max-width:230px; color:var(--ink); }
+  @media (prefers-reduced-motion: reduce){ *{ transition:none !important; } }
+  .hide{ display:none !important; }
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">スプレッドシート・STORES・エルメから直接</div>
+    <h1>ミラとれんじゅの運営盤</h1>
+    <div class="h-rule"></div>
+    <div class="h-meta" id="hmeta"></div>
+    <div class="topbar">
+      <button class="btn" id="refresh">数字を取り直す</button>
+      <span class="upd" id="updmsg"></span>
+    </div>
+  </header>
+
+  <div class="tiles" id="tiles"></div>
+  <div id="stale"></div>
+
+  <section>
+    <div class="s-head"><h2>いま落ちているところ</h2><div class="s-note" id="diagnote"></div></div>
+    <div class="panel"><div class="p-body" id="diag"></div></div>
+  </section>
+
+  <section>
+    <div class="s-head"><h2>お客さまが来るまでの流れ</h2><div class="s-note" id="fnnote"></div></div>
+    <div class="cols fn-cols">
+      <div class="panel">
+        <div class="p-head"><h2>どこで減っているか</h2><span class="s-note" id="fnmonth"></span></div>
+        <div class="p-body" id="fnbars"></div>
+      </div>
+      <div class="panel">
+        <div class="p-head"><h2>月ごとの数字</h2><span class="s-note">7ヶ月</span></div>
+        <div class="p-body"><div class="chart-wrap"><table id="fntable"></table></div></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="s-head"><h2>インスタのコメントに返信できているか</h2>
+      <div class="s-note" id="crnote"></div></div>
+    <div class="panel"><div class="p-body pad" id="creply"></div></div>
+  </section>
+
+  <section>
+    <div class="s-head"><h2>SNSの反応</h2><div class="s-note" id="snsnote"></div></div>
+    <div class="cols even" id="snscols"></div>
+  </section>
+
+  <section>
+    <div class="s-head"><h2>売上</h2><div class="s-note">STORESの注文をそのまま集計</div></div>
+    <div class="cols">
+      <div class="panel">
+        <div class="p-head"><h2>今月</h2><span class="s-note" id="salesnote"></span></div>
+        <div class="p-body pad">
+          <div class="big" id="salesbig"></div>
+          <div class="chart-wrap" id="chart-sales"></div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="p-head"><h2>今月の商品別</h2></div>
+        <div class="p-body pad"><div class="chart-wrap"><table id="byitem"></table></div></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="s-head"><h2>対応を待っている人</h2><div class="s-note">日数が経っている順</div></div>
+    <div class="cols">
+      <div class="panel">
+        <div class="p-head"><h2>有料鑑定（鑑定書がまだ）</h2><span class="s-note" id="paidnote"></span></div>
+        <div class="p-body" id="paidlist"></div>
+      </div>
+      <div class="panel">
+        <div class="p-head"><h2>無料鑑定（送付がまだ）</h2><span class="s-note" id="freenote"></span></div>
+        <div class="p-body" id="freelist"></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="s-head"><h2>LINEの返信待ち</h2><div class="s-note" id="linenote"></div></div>
+    <div class="cols even" id="linecols"></div>
+  </section>
+
+  <section>
+    <div class="s-head"><h2>無料鑑定の申し込み</h2><div class="s-note">この30日</div></div>
+    <div class="cols">
+      <div class="panel">
+        <div class="p-head"><h2>1日ごとの申し込み数</h2><span class="s-note" id="freesum"></span></div>
+        <div class="p-body pad"><div class="chart-wrap" id="chart-free"></div>
+          <div class="legend">
+            <span><i style="background:var(--mira)"></i>ミラ</span>
+            <span><i style="background:var(--renju)"></i>れんじゅ</span>
+          </div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="p-head"><h2>件数</h2></div>
+        <div class="p-body pad"><table id="freetable"></table>
+          <p class="note" id="writingqueue"></p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="s-head"><h2>ツールの稼働状況</h2><div class="s-note" id="toolnote"></div></div>
+    <div class="panel"><div class="p-body" id="tools"></div></div>
+  </section>
+
+  <section>
+    <div class="s-head"><h2>最近の注文</h2><div class="s-note">STORESの新しい順</div></div>
+    <div class="panel"><div class="p-body" id="orders"></div></div>
+  </section>
+
+  <footer id="foot"></footer>
+</div>
+<div id="tip" role="status"></div>
+
+<script>
+const D = /*__DATA__*/null;
+const $ = (s,r=document)=>r.querySelector(s);
+const esc = s => String(s==null?"":s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const yen = n => "¥" + Number(n||0).toLocaleString("ja-JP");
+const man = n => (Math.round((n||0)/1000)/10).toFixed(1);
+
+$("#hmeta").innerHTML = [
+  esc(D.generated) + " 現在",
+  "売上＝STORES　無料鑑定・有料鑑定＝スプレッドシート　LINE＝エルメ"
+].map(s=>"<span>"+s+"</span>").join("");
+
+/* 上の4つ */
+(function tiles(){
+  const paid=D.paid.pending, free=D.free.flatMap(f=>f.pending);
+  const oldest = paid.length ? Math.max(...paid.map(p=>p.days||0)) : 0;
+  const lineNeed = D.line.bots.reduce((s,b)=>s+b.need_reply,0);
+  const lineRecent = D.line.bots.reduce((s,b)=>s+b.recent,0);
+  const bad = D.tools.filter(t=>t.state==="down").length;
+  const warn = D.tools.filter(t=>t.state==="warn"||t.state==="unknown").length;
+  const r=D.rules;
+  const t=[
+    { k:"有料鑑定 未送付", v:paid.length, u:"人",
+      sub: paid.length ? "いちばん古い受付から "+oldest+"日" : "たまっていません",
+      cls: oldest>=r.paid_alert_days ? "bad" : (paid.length ? "warn" : "good") },
+    { k:"無料鑑定 未送付", v:free.length, u:"人",
+      sub: free.length ? "ミラ "+D.free[0].pending.length+"・れんじゅ "+D.free[1].pending.length+"人" : "たまっていません",
+      cls: free.length>10 ? "warn" : "good" },
+    { k:"LINE 返信待ち", v:lineNeed, u:"人",
+      sub:"直近"+(D.line.recent_days||D.rules.line_recent_days)+"日・自動応答だけの人を除く（未確認は "+lineRecent+"人）",
+      cls: lineNeed>=10 ? "warn" : "good" },
+    { k:"手が必要なツール", v:bad+warn, u:"件",
+      sub: bad ? "止まっている "+bad+"件・様子見 "+warn+"件" : (warn?"様子見 "+warn+"件":"ぜんぶ正常"),
+      cls: bad ? "bad" : (warn ? "warn" : "good") }
+  ];
+  $("#tiles").innerHTML = t.map(x=>'<div class="tile '+x.cls+'"><div class="k">'+esc(x.k)+'</div>'
+    +'<div class="v">'+x.v+'<small>'+x.u+'</small></div><div class="sub">'+esc(x.sub)+'</div></div>').join("");
+})();
+
+(function stale(){
+  if(D.line.missing){ $("#stale").innerHTML =
+    '<div class="warnbar">LINEの数字が取れていません。'+esc(D.line.error||"")+'</div>'; return; }
+  if(D.line.stale_hours!=null && D.line.stale_hours>24){
+    $("#stale").innerHTML = '<div class="warnbar">LINEの数字は '+esc(D.line.fetched)
+      +' 時点のものです。取り直すときは Claude に「ダッシュボード更新」と伝えてください。</div>';
+  }
+})();
+
+/* 売上 */
+(function sales(){
+  const s=D.sales, ms=s.months, cur=ms[ms.length-1], prev=ms[ms.length-2];
+  const diff = prev && prev.amount ? Math.round((cur.amount-prev.amount)/prev.amount*100) : null;
+  $("#salesbig").innerHTML = '<span class="n">'+yen(s.this_month.amount)+'</span>'
+    +'<span class="u">'+s.this_month.count+'件　先月 '+yen(prev?prev.amount:0)+'（'+(prev?prev.count:0)+'件）'
+    +'　今日 '+yen(s.today.amount)+'</span>'
+    +(diff===null?'':'<span class="delta '+(diff>=0?"up":"dn")+'">先月比 '+(diff>=0?"+":"")+diff+'%</span>');
+  $("#salesnote").textContent = s.error ? s.error : "月が変わるまでの途中経過";
+
+  const W=430,H=210,pad={t:24,r:12,b:30,l:42};
+  const iw=W-pad.l-pad.r, ih=H-pad.t-pad.b;
+  const max=Math.max(1,...ms.map(m=>m.amount))*1.18;
+  const y=v=>pad.t+ih-(v/max)*ih;
+  const bw=Math.min(46,iw/ms.length-14);
+  let g='<line x1="'+pad.l+'" x2="'+(W-pad.r)+'" y1="'+y(0)+'" y2="'+y(0)+'" stroke="var(--rule)"/>';
+  const step=Math.max(10000,Math.round(max/2/100000)*100000);
+  for(let v=step; v<max; v+=step){
+    g+='<line x1="'+pad.l+'" x2="'+(W-pad.r)+'" y1="'+y(v)+'" y2="'+y(v)+'" stroke="var(--hair)"/>'
+      +'<text x="'+(pad.l-7)+'" y="'+(y(v)+4)+'" text-anchor="end" font-size="10" fill="var(--ink-3)">'
+      +Math.round(v/10000)+'万</text>';
+  }
+  ms.forEach((m,i)=>{
+    const cx=pad.l+iw*((i+.5)/ms.length), x=cx-bw/2, h=Math.max(0,y(0)-y(m.amount));
+    g+='<rect x="'+x+'" y="'+y(m.amount)+'" width="'+bw+'" height="'+h+'" rx="4" fill="var(--mira)"'
+      +(m.current?' opacity=".55"':'')+' data-tip="'+esc(m.label+"　"+yen(m.amount)+"\n"+m.count+"件"
+        +(m.current?"\n※今月は途中":""))+'"/>'
+      +'<text x="'+cx+'" y="'+(y(m.amount)-7)+'" text-anchor="middle" font-size="11" font-weight="700" '
+      +'fill="var(--ink)">'+man(m.amount)+'</text>'
+      +'<text x="'+cx+'" y="'+(H-pad.b+17)+'" text-anchor="middle" font-size="11" fill="var(--ink-2)">'
+      +esc(m.label)+'</text>';
+  });
+  $("#chart-sales").innerHTML='<svg viewBox="0 0 '+W+' '+H+'" width="100%" height="'+H+'" role="img" '
+    +'aria-label="過去6ヶ月の売上（万円）">'+g+'</svg>'
+    +'<p class="note">棒の上の数字は万円。うすい棒が今月（まだ途中）。</p>';
+
+  $("#byitem").innerHTML = '<thead><tr><th>商品</th><th>売上</th></tr></thead><tbody>'
+    + (s.by_item.length ? s.by_item.map(i=>'<tr><td>'+esc(i.name)+'</td><td>'+yen(i.amount)+'</td></tr>').join("")
+       : '<tr><td colspan="2" class="basis">今月の注文はまだありません</td></tr>')
+    + '</tbody>';
+})();
+
+/* 待っている人 */
+function dayChip(d, warnD, badD){
+  if(d==null) return '<span class="chip">受付日なし</span>';
+  const cls = d>=badD ? "bad" : (d>=warnD ? "warn" : "");
+  return '<span class="chip '+cls+'">'+d+'日</span>';
+}
+(function paid(){
+  const p=D.paid.pending, r=D.rules;
+  $("#paidnote").textContent = p.length+"人待ち・今月の受付 "+D.paid.this_month+"人";
+  const rows = p.map((x,i)=>'<div class="row'+(i>=8?" hide extra":"")+'">'
+    + dayChip(x.days, r.paid_warn_days, r.paid_alert_days)
+    + '<div class="main">'+esc(x.name)+'<div class="sub">'+esc(x.item||"")
+      +(x.worry?'　'+esc(x.worry):'')+'</div></div>'
+    + '<span class="right">'+esc(x.at)+(x.price?'　'+esc(x.price)+'円':'')+'</span></div>').join("");
+  $("#paidlist").innerHTML = (rows || '<p class="basis" style="padding:10px 0">待っている人はいません。</p>')
+    + (p.length>8 ? '<button class="more" data-more="paidlist">残り '+(p.length-8)+'人を表示</button>' : '')
+    + '<p class="note">鑑定購入者リストで「鑑定書送付日」が空の行。受付日が空の行はSTORESの注文日で補っています。'
+    + 'このほかに、' + D.paid.stale_days + '日より前の受付で送付日が空のまま残っている行が ' + D.paid.stale.length + '件'
+    + '（シートの書き忘れの可能性・要整理）、パワーストーンやブレスなど鑑定書を書かない商品が '
+    + D.paid.other.length + '件あります。</p>';
+})();
+(function free(){
+  const all = D.free.flatMap(f=>f.pending.map(p=>({...p, who:f.label})));
+  all.sort((a,b)=>(b.days||0)-(a.days||0));
+  const r=D.rules;
+  $("#freenote").textContent = all.length+"人待ち";
+  const rows = all.map((x,i)=>'<div class="row'+(i>=8?" hide extra":"")+'">'
+    + dayChip(x.days, r.free_warn_days, r.free_warn_days*3)
+    + '<div class="main">'+esc(x.name)+'<span class="chip '+(x.who==="ミラ"?"mira":"renju")+'" '
+      +'style="margin-left:7px">'+esc(x.who)+'</span>'
+      +(x.genre?'<div class="sub">'+esc(x.genre)+'</div>':'')+'</div>'
+    + '<span class="right">'+esc(x.at)+'</span></div>').join("");
+  $("#freelist").innerHTML = (rows || '<p class="basis" style="padding:10px 0">待っている人はいません。</p>')
+    + (all.length>8 ? '<button class="more" data-more="freelist">残り '+(all.length-8)+'人を表示</button>' : '')
+    + '<p class="note">顧客リストで「鑑定日」が空の行。「-」（対象外）は数えていません。</p>';
+})();
+
+/* LINE */
+(function line(){
+  if(D.line.missing){ $("#linecols").innerHTML=''; $("#linenote").textContent="取得できていません"; return; }
+  $("#linenote").textContent = "エルメで未確認のまま残っている会話（"+esc(D.line.fetched)+" 時点）";
+  $("#linecols").innerHTML = D.line.bots.map(b=>{
+    const rows = b.waiting.slice(0,12).map(w=>'<div class="row">'
+      + '<span class="chip'+(w.days>=3?" warn":"")+'">'+(w.days===0?"今日":w.days+"日")+'</span>'
+      + '<div class="main">'+esc(w.name)
+        + (w.auto_reply?'<span class="chip" style="margin-left:6px">自動応答のみ</span>':'')
+        + (w.status?'<span class="chip" style="margin-left:6px">'+esc(w.status)+'</span>':'')
+        + '<div class="sub">'+esc(w.last)+'</div></div>'
+      + '<span class="right">'+esc(w.at_label)+'</span></div>').join("");
+    return '<div class="panel"><div class="p-head"><h2>'+esc(b.name)+'</h2>'
+      + '<span class="s-note">返信が要りそう '+b.need_reply+'人／未確認 '+b.unread_total+'件</span></div>'
+      + '<div class="p-body">'+(rows||'<p class="basis" style="padding:10px 0">ありません。</p>')
+      + '<p class="note">友だち '+b.friends_active.toLocaleString("ja-JP")+'人。未確認 '+b.unread_total
+      + '件には「運命」「受け取る」など自動応答で終わった古い会話も含まれます。</p></div></div>';
+  }).join("");
+})();
+
+/* 申し込みの推移 */
+(function freeSeries(){
+  const a=D.free_series, W=430,H=200,pad={t:20,r:10,b:28,l:26};
+  const iw=W-pad.l-pad.r, ih=H-pad.t-pad.b;
+  const max=Math.max(3,...a.map(d=>d.mira+d.renju));
+  const bw=Math.max(5,iw/a.length-3);
+  const y=v=>pad.t+ih-(v/max)*ih;
+  let g='<line x1="'+pad.l+'" x2="'+(W-pad.r)+'" y1="'+y(0)+'" y2="'+y(0)+'" stroke="var(--rule)"/>';
+  [max,Math.round(max/2)].forEach(v=>{
+    g+='<line x1="'+pad.l+'" x2="'+(W-pad.r)+'" y1="'+y(v)+'" y2="'+y(v)+'" stroke="var(--hair)"/>'
+      +'<text x="'+(pad.l-6)+'" y="'+(y(v)+4)+'" text-anchor="end" font-size="10" fill="var(--ink-3)">'+v+'</text>';
+  });
+  a.forEach((d,i)=>{
+    const x=pad.l+iw*(i/a.length)+1.5;
+    const md=new Date(d.date+"T00:00:00"), lbl=(md.getMonth()+1)+"/"+md.getDate();
+    const tot=d.mira+d.renju;
+    if(d.mira) g+='<rect x="'+x+'" y="'+y(d.mira)+'" width="'+bw+'" height="'+(y(0)-y(d.mira))+'" rx="2" '
+      +'fill="var(--mira)" data-tip="'+lbl+'　ミラ '+d.mira+'件"/>';
+    if(d.renju) g+='<rect x="'+x+'" y="'+(y(tot)+2)+'" width="'+bw+'" height="'
+      +Math.max(0,(y(d.mira)-y(tot)-2))+'" rx="2" fill="var(--renju)" data-tip="'+lbl+'　れんじゅ '+d.renju+'件"/>';
+    if(!tot) g+='<rect x="'+x+'" y="'+(y(0)-2)+'" width="'+bw+'" height="2" fill="var(--track)" '
+      +'data-tip="'+lbl+'　申し込みなし"/>';
+    if(i%6===0||i===a.length-1) g+='<text x="'+(x+bw/2)+'" y="'+(H-pad.b+15)+'" text-anchor="middle" '
+      +'font-size="10" fill="var(--ink-3)">'+lbl+'</text>';
+  });
+  $("#chart-free").innerHTML='<svg viewBox="0 0 '+W+' '+H+'" width="100%" height="'+H+'" role="img" '
+    +'aria-label="この30日の無料鑑定の申し込み数">'+g+'</svg>';
+  $("#freesum").textContent = "30日で "+a.reduce((s,d)=>s+d.mira+d.renju,0)+"件";
+
+  $("#freetable").innerHTML='<thead><tr><th></th><th>今月</th><th>先月</th><th>直近7日</th><th>累計</th></tr></thead>'
+    +'<tbody>'+D.free.map(f=>'<tr><td>'+esc(f.label)+'</td><td>'+f.this_month+'</td><td>'+f.last_month
+    +'</td><td>'+f.last7+'</td><td>'+f.total.toLocaleString("ja-JP")+'</td></tr>').join("")+'</tbody>';
+  const q=D.paid.writing_queue;
+  $("#writingqueue").textContent = "有料の鑑定文づくり：確認待ち "+q["確認待ち"]+"件／生成済み "+q["生成済み"]
+    +"件（有料鑑定文作成シート）";
+})();
+
+/* ツール */
+(function tools(){
+  const L={ok:"正常",warn:"要確認",down:"止まっている",unknown:"判定できず"};
+  const order={down:0,unknown:1,warn:2,ok:3};
+  const ts=[...D.tools].sort((a,b)=>order[a.state]-order[b.state]);
+  $("#tools").innerHTML = ts.map(t=>'<div class="tool">'
+    +'<span class="dot '+t.state+'"></span>'
+    +'<div><span class="nm">'+esc(t.name)+'</span>'
+      +'<span class="chip '+(t.who==="ミラ"?"mira":"renju")+'" style="margin-left:7px">'+esc(t.who)+'</span>'
+      +(t.auto?'':'<span class="chip" style="margin-left:6px">自動判定なし</span>')+'</div>'
+    +'<span class="state '+t.state+'">'+L[t.state]+'</span>'
+    +'<div class="fact">'+esc(t.fact)+'</div>'
+    +'<div class="rule">'+esc(t.detail||"")+(t.rule?'　判定：'+esc(t.rule):'')+'</div></div>').join("");
+  $("#toolnote").textContent = D.tools.filter(t=>t.auto).length+"件はログ・投稿記録・/health から自動判定";
+})();
+
+/* 最近の注文 */
+$("#orders").innerHTML = D.sales.recent.length
+  ? D.sales.recent.map(o=>'<div class="row"><span class="chip">'+esc(o.at)+'</span>'
+      +'<div class="main">'+esc(o.item||"（商品名なし）")+'<div class="sub">注文番号 '+esc(o.no)+'</div></div>'
+      +'<span class="right">'+yen(o.amount)+'</span></div>').join("")
+  : '<p class="basis" style="padding:10px 0">注文がありません。</p>';
+
+document.addEventListener("click", e=>{
+  const b=e.target.closest(".more"); if(!b) return;
+  const host=document.getElementById(b.dataset.more);
+  const hidden=host.querySelector(".extra.hide");
+  host.querySelectorAll(".extra").forEach(el=>el.classList.toggle("hide", !hidden));
+  b.textContent = hidden ? "たたむ" : "残り "+host.querySelectorAll(".extra").length+"人を表示";
+});
+
+$("#foot").innerHTML = '売上はSTORESの注文、無料鑑定と有料鑑定はスプレッドシート、LINEはエルメから取っています。'
+  + 'ツールの状態は投稿記録・ログ・/health を見て自動で判定しています（「自動判定なし」と書いてあるものだけ手入力）。'
+  + '作り直すときは <code>py build.py</code>。';
+
+
+/* いま落ちているところ */
+(function diag(){
+  const d=D.diagnosis;
+  const mLabel = m => Number(m.slice(5))+"月";
+  $("#diagnote").textContent = mLabel(d.month)+"を、その前5ヶ月の真ん中の月とくらべています";
+  if(!d.items.length){ $("#diag").innerHTML='<p class="basis" style="padding:10px 0">'
+    +'大きく落ちている数字はありません。</p>'; return; }
+  const fmt=(v,u)=> u==="円" ? yen(v) : (u==="%"? v+"%" : Number(v).toLocaleString("ja-JP")+(u||""));
+  $("#diag").innerHTML = d.items.slice(0,7).map(i=>'<div class="diag '+i.severity+'">'
+    +'<span class="sev"></span>'
+    +'<div class="body"><div class="ttl">'+esc(i.label)+'</div>'
+    +'<div class="num">'+fmt(i.base,i.unit)+' → <b>'+fmt(i.now,i.unit)+'</b>'
+    +'　<span style="color:var(--ink-3)">'+esc(i.base_label)+' とくらべて</span></div>'
+    +(i.hint?'<div class="hint">'+esc(i.hint)+'</div>':'')+'</div>'
+    +'<div class="pct">'+i.change+'%</div></div>').join("");
+})();
+
+/* ファネル */
+(function funnel(){
+  const F=D.funnel, ms=F.months, cur=ms[ms.length-2];
+  const S={}, R={};
+  F.stages.forEach(s=>S[s.key]=s); F.rates.forEach(r=>R[r.key]=r);
+  const mLabel = m => Number(m.slice(5))+"月";
+  $("#fnnote").textContent = "インスタのコメントから本鑑定まで（ミラ）";
+  $("#fnmonth").textContent = mLabel(cur)+"の実績";
+
+  const median = xs => { const a=xs.filter(x=>x!=null).sort((p,q)=>p-q);
+    return a.length ? a[Math.floor(a.length/2)] : null; };
+  const baseOf = key => median(ms.slice(0,-2).map(m=>R[key].values[m]));
+
+  const steps=[
+    {stage:"ig_total_comments", label:"インスタのコメント"},
+    {stage:"friend_adds", label:"LINE友だち追加", rate:"comment_to_friend"},
+    {stage:"free_applied", label:"無料鑑定の申込", rate:"apply_rate"},
+    {stage:"free_sent", label:"無料鑑定の送付", rate:"send_rate"},
+    {stage:"paid_orders", label:"本鑑定の購入", rate:"cvr"},
+  ];
+  $("#fnbars").innerHTML = steps.map((st,i)=>{
+    const v=S[st.stage].values[cur];
+    const r= st.rate ? R[st.rate].values[cur] : null;
+    const b= st.rate ? baseOf(st.rate) : null;
+    const w= st.rate ? Math.min(100, (r||0)/Math.max(r||0,b||0,1)*100) : 100;
+    const bw= (st.rate && b) ? Math.min(100, b/Math.max(r||0,b,1)*100) : null;
+    const diff = (r!=null && b) ? Math.round((r-b)/b*100) : null;
+    return '<div class="fn">'
+      +'<div class="fn-top"><span class="lb">'+esc(st.label)+'</span>'
+      +'<span class="vl"><b>'+Number(v||0).toLocaleString("ja-JP")+'</b>'+(st.stage==="ig_total_comments"?"件":"人")+'</span></div>'
+      +'<div class="fn-bar"><i style="width:'+w+'%"></i>'
+      +(bw!=null?'<span class="base" style="left:'+bw+'%" data-tip="前5ヶ月の真ん中 '+b+'%"></span>':'')
+      +'</div>'
+      +(st.rate?'<div class="fn-rate"><span>前の段階から <b>'+(r==null?"—":r+"%")+'</b>'
+        +(b?'（前5ヶ月は '+b+'%）':'')+'</span>'
+        +(diff!=null?'<span class="'+(diff<0?"dn":"up")+'">'+(diff>0?"+":"")+diff+'%</span>':'')
+        +'</div>':'<div class="fn-rate"><span>ここが入口</span></div>')
+      +'</div>';
+  }).join("")
+  + '<p class="note">棒の長さは「前の段階から何%残ったか」。金色の縦線が前5ヶ月の真ん中の値です。</p>';
+
+  const rows=[...F.stages,...F.rates];
+  const fmt=(v,u)=> v==null ? "–" : (u==="円"? Math.round(v/10000)+"万" : (u==="%"? v+"%" : Number(v).toLocaleString("ja-JP")));
+  $("#fntable").innerHTML='<thead><tr><th>項目</th>'
+    +ms.map((m,i)=>'<th>'+mLabel(m)+(i===ms.length-1?'<div class="basis">途中</div>':'')+'</th>').join("")+'</tr></thead>'
+    +'<tbody>'+rows.map(r=>'<tr><td>'+esc(r.label)
+      +(r.note?'<div class="basis">'+esc(r.note)+'</div>':'')+'</td>'
+      +ms.map(m=>'<td>'+fmt(r.values[m], r.unit)+'</td>').join("")+'</tr>').join("")
+    +'</tbody>';
+})();
+
+/* SNS */
+(function sns(){
+  const S=D.sns, N=D.funnel.now;
+  $("#snsnote").textContent = "投稿そのものの数字（Instagram・Threads）";
+  const card=(title, ok, err, stats, rows, cols)=>'<div class="panel">'
+    +'<div class="p-head"><h2>'+esc(title)+'</h2><span class="s-note">'+(ok?"":esc(err||"取得できず"))+'</span></div>'
+    +'<div class="p-body pad">'
+    +'<div class="legend" style="gap:18px;margin:0 0 10px">'+stats.map(s=>'<span>'+esc(s[0])
+      +' <b style="color:var(--ink);font-size:14px">'+esc(s[1])+'</b></span>').join("")+'</div>'
+    +(rows.length?('<table><thead><tr><th>投稿</th>'+cols.map(c=>'<th>'+c+'</th>').join("")+'</tr></thead><tbody>'
+      +rows+'</tbody></table>'):'<p class="basis">投稿がありません。</p>')
+    +'<p class="note">反応が大きかった順（直近30投稿のうち）。</p></div></div>';
+
+  const ig=S.instagram||{}, th=S.threads||{};
+  const link=(u,label)=> u ? '<a href="'+esc(u)+'" target="_blank" rel="noopener" '
+    +'style="color:var(--mira)">'+label+'</a>' : label;
+  const igRows=(ig.recent||[]).map(p=>'<tr><td>'+link(p.url, esc(p.at))
+    +(p.text?'　'+esc(p.text):'')+'<div class="basis">'+esc(p.type||"")
+    +(p.text?'':'　投稿を開く') +'</div></td><td>'+Number(p.reach||0).toLocaleString("ja-JP")
+    +'</td><td>'+p.likes+'</td><td>'+p.comments+'</td></tr>').join("");
+  const thRows=(th.recent||[]).map(p=>'<tr><td>'+link(p.url, esc(p.at))+'　'+esc(p.text||"")+'</td><td>'
+    +Number(p.views||0).toLocaleString("ja-JP")+'</td><td>'+p.likes+'</td><td>'+p.replies+'</td></tr>').join("");
+  $("#snscols").innerHTML =
+    card("Instagram @"+(ig.username||"—"), ig.ok, ig.error,
+      [["フォロワー", Number(ig.followers||0).toLocaleString("ja-JP")],
+       ["直近30投稿の平均リーチ", Number(N.ig_reach||0).toLocaleString("ja-JP")],
+       ["平均いいね", Number(N.ig_likes||0).toLocaleString("ja-JP")]],
+      igRows, ["リーチ","いいね","コメント"])
+    + card("Threads @"+(th.username||"—"), th.ok, th.error,
+      [["フォロワー", Number(th.followers||0).toLocaleString("ja-JP")],
+       ["直近30投稿の平均ビュー", Number(N.th_views||0).toLocaleString("ja-JP")],
+       ["平均いいね", Number(N.th_likes||0).toLocaleString("ja-JP")]],
+      thRows, ["ビュー","いいね","返信"]);
+})();
+
+
+/* インスタのコメントに返信できているか */
+(function creply(){
+  const c=D.comment_reply||{};
+  if(!c.ok){ $("#creply").innerHTML='<p class="basis">集計できませんでした。'+esc(c.error||"")+'</p>';
+    $("#crnote").textContent=""; return; }
+  const rate=c.rate==null?0:c.rate;
+  const cls = rate>=70 ? "" : (rate>=40 ? "warn" : "bad");
+  const col = rate>=70 ? "var(--ok)" : (rate>=40 ? "var(--warn)" : "var(--down)");
+  $("#crnote").textContent = "ログが残っている範囲："+esc(c.from)+" 〜 "+esc(c.to);
+  const tot=c.replied+c.missed;
+  $("#creply").innerHTML =
+    '<div class="cr-head"><span class="big-n" style="color:'+col+'">'+rate+'%</span>'
+    +'<span style="font-size:13px;color:var(--ink-2)">コメントをくれた <b>'+tot.toLocaleString("ja-JP")
+    +'</b>人のうち、自動DMを返せたのは <b>'+c.replied.toLocaleString("ja-JP")+'</b>人。'
+    +'<b style="color:var(--down)">'+c.missed.toLocaleString("ja-JP")+'人には返せていません。</b></span></div>'
+    +'<div class="cr-bar"><i class="y" style="width:'+(tot?c.replied/tot*100:0)+'%"></i>'
+    +'<i class="n" style="width:'+(tot?c.missed/tot*100:0)+'%"></i></div>'
+    +'<div class="cr-legend"><span><i style="background:var(--ok)"></i>返せた '+c.replied+'人</span>'
+    +'<span><i style="background:var(--down)"></i>返せていない '+c.missed+'人</span></div>'
+    +'<table style="margin-top:14px"><thead><tr><th>日</th><th>返せた</th><th>返せていない</th>'
+    +'<th>返信できた率</th><th>間隔内でスキップ</th></tr></thead><tbody>'
+    + c.days.map(d=>'<tr><td>'+esc(d.date.slice(5).replace("-","/"))+'</td><td>'+d.ok+'人</td>'
+      +'<td>'+d.ng+'人</td><td>'+(d.rate==null?"–":d.rate+"%")+'</td><td>'+d.skip+'人</td></tr>').join("")
+    +'</tbody></table>'
+    + (c.reasons.length ? '<p class="note">返せていない理由：'
+        + c.reasons.map(r=>esc(r.label)+'（'+r.count.toLocaleString("ja-JP")+'回）').join("／")
+        + '</p>' : '')
+    + '<p class="note">インスタ自動投稿ツールのログから、人ごとにまとめて数えています。'
+    + '同じ人に何度も試した分は1人として数えます。「間隔内でスキップ」は前に送ったばかりの人なので、失敗ではありません。</p>';
+})();
+
+/* 更新ボタン */
+(function refresh(){
+  const btn=$("#refresh"), msg=$("#updmsg");
+  if(!btn) return;
+  const idle = '最新の数字に入れ替えます（1〜2分かかります）';
+  msg.textContent = idle;
+  let timer=null;
+  const poll = async ()=>{
+    try{
+      const r = await fetch("/api/dashboard/status");
+      const s = await r.json();
+      if(s.running){ msg.innerHTML = '<span class="spin"></span> 取り直しています… そのままお待ちください'; return; }
+      clearInterval(timer); timer=null;
+      if(s.error){ btn.disabled=false; msg.textContent = "うまくいきませんでした：" + s.error; return; }
+      msg.textContent = "できました。画面を新しくします…";
+      location.reload();
+    }catch(e){ /* 通信が一瞬切れただけなら次の回で拾う */ }
+  };
+  btn.addEventListener("click", async ()=>{
+    btn.disabled=true;
+    msg.innerHTML = '<span class="spin"></span> 取り直しています… そのままお待ちください';
+    try{
+      await fetch("/api/dashboard/refresh", {method:"POST"});
+      timer = setInterval(poll, 3000);
+    }catch(e){
+      btn.disabled=false; msg.textContent="開始できませんでした。もう一度押してください。";
+    }
+  });
+})();
+
+(function tips(){
+  const tip=$("#tip");
+  document.addEventListener("mouseover", e=>{
+    const t=e.target.closest("[data-tip]"); if(!t) return;
+    tip.innerHTML = esc(t.dataset.tip).replace(/\n/g,"<br>"); tip.style.opacity="1";
+  });
+  document.addEventListener("mousemove", e=>{
+    if(tip.style.opacity!=="1") return;
+    tip.style.left = Math.min(e.clientX+14, innerWidth-tip.offsetWidth-10)+"px";
+    tip.style.top  = Math.max(8, e.clientY-tip.offsetHeight-12)+"px";
+  });
+  document.addEventListener("mouseout", e=>{ if(e.target.closest("[data-tip]")) tip.style.opacity="0"; });
+})();
+</script>

@@ -407,6 +407,39 @@ async def api_accounts():
     ]
 
 
+# ─── 運営ダッシュボード ───────────────────────────────
+
+@app.get("/dashboard")
+async def dashboard_page():
+    """売上・対応待ち・ファネル・ツール状態の一覧。画面の「数字を取り直す」で更新する。"""
+    import dashboard
+    html = dashboard.html()
+    if html:
+        return HTMLResponse(html)
+    if not dashboard.status()["running"]:
+        dashboard.refresh_async()
+    return HTMLResponse("""<!doctype html><meta charset="utf-8">
+<title>運営ダッシュボード</title>
+<meta http-equiv="refresh" content="10">
+<style>body{font-family:system-ui,sans-serif;margin:0;display:grid;place-items:center;height:100vh;
+background:#F1F1F6;color:#1A1B2E}div{text-align:center;line-height:2}</style>
+<div><h1 style="font-size:19px;margin:0 0 6px">はじめの数字を集めています</h1>
+<p style="color:#74768D;font-size:13px">1〜2分かかります。この画面は自動で切り替わります。</p></div>""")
+
+
+@app.post("/api/dashboard/refresh")
+async def dashboard_refresh():
+    import dashboard
+    started = dashboard.refresh_async()
+    return {"started": started, **dashboard.status()}
+
+
+@app.get("/api/dashboard/status")
+async def dashboard_status():
+    import dashboard
+    return dashboard.status()
+
+
 @app.get("/api/conversations")
 async def api_conversations(account: str = "main"):
     return get_conversations(account)
