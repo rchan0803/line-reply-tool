@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>承認待ち</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Hiragino Sans', 'Meiryo', sans-serif; background: #f0f2f5; color: #333; }
+  header { background: #00b900; color: white; padding: 12px 16px; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 2; }
+  header h1 { font-size: 17px; }
+  header a { color: white; font-size: 13px; }
+  main { max-width: 640px; margin: 0 auto; padding: 12px 12px 40px; }
+  .empty { text-align: center; color: #888; padding: 48px 0; }
+  .card { background: white; border-radius: 12px; padding: 14px; margin-bottom: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+  .card-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
+  .name { font-weight: bold; font-size: 16px; }
+  .meta { font-size: 12px; color: #888; }
+  .badge { display: inline-block; font-size: 11px; background: #e8f7e8; color: #008a00; border-radius: 8px; padding: 2px 8px; margin-left: 6px; }
+  .msgs { background: #f5f5f5; border-radius: 8px; padding: 8px 10px; margin-bottom: 10px; font-size: 14px; white-space: pre-wrap; max-height: 220px; overflow-y: auto; }
+  .msgs div + div { border-top: 1px dashed #ddd; margin-top: 6px; padding-top: 6px; }
+  textarea { width: 100%; min-height: 200px; border: 1px solid #ccc; border-radius: 8px; padding: 10px; font-size: 15px; line-height: 1.6; font-family: inherit; }
+  .row { display: flex; gap: 8px; margin-top: 8px; }
+  .row input { flex: 1; border: 1px solid #ccc; border-radius: 8px; padding: 10px; font-size: 15px; }
+  button { border: none; border-radius: 8px; padding: 12px 14px; font-size: 15px; font-weight: bold; cursor: pointer; }
+  .send { background: #00b900; color: white; flex: 1; }
+  .skip { background: #eee; color: #555; }
+  .fix { background: #555; color: white; }
+  button:disabled { opacity: 0.5; }
+  h2 { font-size: 14px; color: #666; margin: 24px 4px 10px; }
+  details summary { cursor: pointer; font-size: 13px; color: #666; margin-bottom: 8px; }
+  #toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #333; color: white; padding: 10px 18px; border-radius: 20px; font-size: 14px; display: none; z-index: 3; }
+</style>
+</head>
+<body>
+<header>
+  <h1>承認待ち <span id="count"></span></h1>
+  <a href="/">ツールの画面へ</a>
+</header>
+<main>
+  <div id="list"></div>
+  <div id="noreply"></div>
+</main>
+<div id="toast"></div>
+
+<script>
+let items = [];
+let dirty = false;  // 書き換え中なら自動更新しない
+document.addEventListener('input', () => { dirty = true; });
+
+function esc(s) {
+  return (s || '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+}
+function fmt(iso) {
+  const d = new Date(iso);
+  return `${d.getMonth()+1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2,'0')}`;
+}
+function toast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.style.display = 'block';
+  clearTimeout(t._h); t._h = setTimeout(() => t.style.display = 'none', 3000);
+}
+
+function cardHtml(it) {
+  const msgs = it.messages.map(m => `<div>${esc(m.content)}</div>`).join('') || '<div>（メッセージなし）</div>';
+  return `
+  <div class="card" id="card-${it.id}">
+    <div class="card-head">
+      <div><span class="name">${esc(it.name)}様</span><span class="badge">${esc(it.account)}</span></div>
+      <div class="meta">${fmt(it.created_at)}</div>
+    </div>
+    <div class="msgs">${msgs}</div>
+    <textarea id="text-${it.id}">${esc(it.draft)}</textarea>
+    <div class="row">
+      <input id="ins-${it.id}" placeholder="直したいところ（例：もっと短く）">
+      <button class="fix" onclick="fix(${it.id})">直す</button>
+    </div>
+    <div class="row">
+      <button class="send" onclick="send(${it.id})">この内容で送る</button>
+      <button class="skip" onclick="skip(${it.id})">送らない</button>
+    </div>
+  </div>`;
+}
+
+async function load() {
+  const res = await fetch('/api/inbox');
+  if (res.redirected || !res.ok) { location.href = '/login'; return; }
+  items = (await res.json()).items;
+  dirty = false;
+  const pending = items.filter(i => i.status === 'pending');
+  const noreply = items.filter(i => i.status === 'no_reply');
+  document.getElementById('count').textContent = pending.length ? `（${pending.length}件）` : '';
+  document.getElementById('list').innerHTML =
+    pending.length ? pending.map(cardHtml).join('') : '<div class="empty">承認待ちはありません</div>';
+  document.getElementById('noreply').innerHTML = noreply.length ? `
+    <h2>AIが返信不要と判断したもの（${noreply.length}件）</h2>
+    <details><summary>開いて確認する</summary>${noreply.map(cardHtml).join('')}</details>` : '';
+}
+
+function lock(id, on) {
+  document.querySelectorAll(`#card-${id} button`).forEach(b => b.disabled = on);
+}
+
+async function send(id) {
+  const text = document.getElementById(`text-${id}`).value.trim();
+  if (!text || text.startsWith('【返信不要】')) { toast('送る文章を入れてください'); return; }
+  const it = items.find(i => i.id === id);
+  if (!confirm(`${it.name}様に送ります。よろしいですか？`)) return;
+  lock(id, true);
+  const res = await fetch(`/api/inbox/${id}/send`, {
+    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ text }),
+  });
+  if (res.ok) { toast('送りました'); load(); }
+  else { lock(id, false); toast((await res.json()).detail || '送れませんでした'); }
+}
+
+async function skip(id) {
+  lock(id, true);
+  const res = await fetch(`/api/inbox/${id}/skip`, { method: 'POST' });
+  if (res.ok) { toast('送らないにしました'); load(); }
+  else { lock(id, false); toast((await res.json()).detail || 'できませんでした'); }
+}
+
+async function fix(id) {
+  const instruction = document.getElementById(`ins-${id}`).value.trim();
+  if (!instruction) { toast('直したいところを書いてください'); return; }
+  const draft = document.getElementById(`text-${id}`).value;
+  lock(id, true);
+  toast('作り直しています…');
+  const res = await fetch(`/api/inbox/${id}/refine`, {
+    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ instruction, draft }),
+  });
+  lock(id, false);
+  if (res.ok) {
+    document.getElementById(`text-${id}`).value = (await res.json()).draft;
+    document.getElementById(`ins-${id}`).value = '';
+    toast('直しました');
+  } else { toast((await res.json()).detail || '直せませんでした'); }
+}
+
+load();
+// 開いたままでも新しい承認待ちが出るように（入力中は更新しない）
+setInterval(() => {
+  if (!dirty) load();
+}, 60000);
+</script>
+</body>
+</html>

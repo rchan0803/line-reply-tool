@@ -1,4 +1,5 @@
 import os
+import asyncio
 import hmac
 import hashlib
 import base64
@@ -18,6 +19,8 @@ from database import (
     init_db, upsert_user, save_message, save_draft,
     get_conversations, get_messages, get_latest_draft, get_user,
     search_conversations, set_call_name, set_appraisal_row,
+    last_inbound_id, get_draft, list_inbox, claim_draft, update_draft_content,
+    set_elme_friend,
 )
 from sheets import load_manuals, get_manual_content
 from claude_service import generate_reply, refine_reply
@@ -369,22 +372,67 @@ async def process_webhook(account_id: str, request: Request):
         # メッセージを保存
         save_message(user_id, "inbound", text)
 
-        # エルメから履歴・プロフィールを取り込み（ベストエフォート）
-        try_elme_sync(user_id, account_id)
-
-        # 返信案を生成して保存
-        history = get_messages(user_id)
-        manual = get_manual_or_reload(account_id)
-        draft = generate_reply(
-            history, manual,
-            customer_name=preferred_name(user_id),
-            customer_profile=profile_text(user_id),
-            account_rules=acc.get("rules", ""),
-            appraisal_content=appraisal_text(get_user(user_id)),
-        )
-        save_draft(user_id, draft)
+        # 続けて届いたら最後の1通を待ってから返信案を作る（LINEへの応答は先に返す）
+        asyncio.create_task(draft_after_quiet(user_id, account_id, last_inbound_id(user_id)))
 
     return {"status": "ok"}
+
+
+# ─── 自動の返信案づくり → 承認待ち → スマホ通知 ──────────────────────
+DRAFT_DELAY_SEC = int(os.getenv("DRAFT_DELAY_SEC", "90"))
+NTFY_SERVER = os.getenv("NTFY_SERVER", "https://ntfy.sh").rstrip("/")
+NTFY_TOPIC = os.getenv("NTFY_TOPIC", "")
+PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "").rstrip("/")
+
+
+def make_auto_draft(user_id: str, account_id: str) -> tuple[int, str]:
+    acc = ACCOUNTS[account_id]
+    # エルメから履歴・プロフィールを取り込み（ベストエフォート）
+    try_elme_sync(user_id, account_id)
+    draft = generate_reply(
+        get_messages(user_id), get_manual_or_reload(account_id),
+        customer_name=preferred_name(user_id),
+        customer_profile=profile_text(user_id),
+        account_rules=acc.get("rules", ""),
+        appraisal_content=appraisal_text(get_user(user_id)),
+    )
+    status = "no_reply" if draft.startswith("【返信不要】") else "pending"
+    return save_draft(user_id, draft, status=status), status
+
+
+async def notify_phone(user_id: str, account_id: str):
+    """スマホに通知（中身は書かない。名前と件名だけ。本文はログイン後の画面で見る）。"""
+    if not NTFY_TOPIC:
+        return
+    name = preferred_name(user_id) or "お客様"
+    headers = {
+        "Title": f"ミラ {ACCOUNTS[account_id]['label']}".encode("utf-8"),
+        "Tags": "envelope",
+    }
+    if PUBLIC_BASE_URL:
+        headers["Click"] = f"{PUBLIC_BASE_URL}/inbox"
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            await client.post(
+                f"{NTFY_SERVER}/{NTFY_TOPIC}",
+                content=f"{name}様の返信案ができました。承認してください".encode("utf-8"),
+                headers=headers,
+            )
+    except Exception as e:
+        print(f"[notify] failed: {e}")
+
+
+async def draft_after_quiet(user_id: str, account_id: str, msg_id):
+    await asyncio.sleep(DRAFT_DELAY_SEC)
+    if last_inbound_id(user_id) != msg_id:
+        return  # あとから届いたメッセージの側でまとめて作る
+    try:
+        _, status = await asyncio.to_thread(make_auto_draft, user_id, account_id)
+    except Exception as e:
+        print(f"[auto-draft] {user_id} failed: {e}")
+        return
+    if status == "pending":
+        await notify_phone(user_id, account_id)
 
 
 @app.post("/webhook")
@@ -729,6 +777,117 @@ async def api_send(user_id: str, req: SendRequest):
 
     save_message(user_id, "outbound", text)
     return {"status": "ok"}
+
+
+# ─── 承認待ち（/inbox）──────────────────────────────────────────
+
+@app.get("/inbox", response_class=HTMLResponse)
+async def inbox_page(request: Request):
+    return TEMPLATES.TemplateResponse(request, "inbox.html")
+
+
+def _recent_inbound(user_id: str) -> list[dict]:
+    """前回こちらが送ったあとに届いたメッセージ（返信の対象）。"""
+    out = []
+    for m in reversed(get_messages(user_id, limit=30)):
+        if m["direction"] != "inbound":
+            break
+        out.append(m)
+    return list(reversed(out))
+
+
+@app.get("/api/inbox")
+async def api_inbox():
+    items = []
+    for d in list_inbox():
+        items.append({
+            "id": d["id"],
+            "user_id": d["user_id"],
+            "status": d["status"],
+            "name": d["call_name"] or d["display_name"] or "",
+            "account": ACCOUNTS.get(d["account"], {}).get("label", d["account"]),
+            "draft": d["content"],
+            "created_at": d["created_at"],
+            "messages": _recent_inbound(d["user_id"]),
+        })
+    return {"items": items}
+
+
+def send_via_elme(user_id: str, text: str):
+    user = get_user(user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="お客様が見つかりません")
+    if not elme_mcp.is_connected():
+        raise HTTPException(status_code=503, detail="エルメの接続が切れています。ツールの画面からエルメに接続し直してください")
+    account = user.get("account") or "main"
+    bot_id = ACCOUNTS[account]["elme_bot_id"]
+    friend_id = user.get("elme_friend_id")
+    if not friend_id:
+        friend_id = elme_sync._resolve_friend(user_id, user.get("display_name") or "", bot_id)
+        if not friend_id:
+            raise HTTPException(status_code=404, detail="エルメでこのお客様が見つかりませんでした")
+        set_elme_friend(user_id, friend_id)
+    elme_mcp.call_tool_json("send_message", {
+        "bot_id": bot_id, "lmessage_friend_id": int(friend_id), "content": text,
+    })
+    # 送った文をエルメから取り込む（取り込めなければ手元に記録）
+    if try_elme_sync(user_id, account).get("status") != "ok":
+        save_message(user_id, "outbound", text)
+
+
+@app.post("/api/inbox/{draft_id}/send")
+async def api_inbox_send(draft_id: int, req: SendRequest):
+    text = req.text.strip()
+    if not text or text.startswith("【返信不要】"):
+        raise HTTPException(status_code=400, detail="送る文章が空です")
+    d = get_draft(draft_id)
+    if not d:
+        raise HTTPException(status_code=404, detail="返信案が見つかりません")
+    if not claim_draft(draft_id, ("pending", "no_reply"), "sending"):
+        raise HTTPException(status_code=409, detail="この返信案はすでに処理済みです")
+    try:
+        update_draft_content(draft_id, text)
+        await asyncio.to_thread(send_via_elme, d["user_id"], text)
+    except HTTPException:
+        claim_draft(draft_id, ("sending",), "pending")
+        raise
+    except Exception as e:
+        claim_draft(draft_id, ("sending",), "pending")
+        raise HTTPException(status_code=502, detail=f"送信できませんでした: {e}")
+    claim_draft(draft_id, ("sending",), "sent")
+    return {"status": "ok"}
+
+
+@app.post("/api/inbox/{draft_id}/skip")
+async def api_inbox_skip(draft_id: int):
+    if not claim_draft(draft_id, ("pending", "no_reply"), "skipped"):
+        raise HTTPException(status_code=409, detail="この返信案はすでに処理済みです")
+    return {"status": "ok"}
+
+
+@app.post("/api/inbox/{draft_id}/refine")
+async def api_inbox_refine(draft_id: int, req: RefineRequest):
+    instruction = req.instruction.strip()
+    if not instruction:
+        raise HTTPException(status_code=400, detail="直したいところを書いてください")
+    d = get_draft(draft_id)
+    if not d or d["status"] not in ("pending", "no_reply"):
+        raise HTTPException(status_code=409, detail="この返信案はすでに処理済みです")
+    user = get_user(d["user_id"])
+    account = (user.get("account") if user else None) or "main"
+    try:
+        draft = await asyncio.to_thread(
+            refine_reply,
+            get_messages(d["user_id"]), get_manual_or_reload(account),
+            preferred_name(d["user_id"]), req.draft, instruction,
+            customer_profile=profile_text(d["user_id"]),
+            appraisal_content=appraisal_text(user),
+        )
+    except Exception as e:
+        raise_friendly_ai_error(e)
+    update_draft_content(draft_id, draft)
+    claim_draft(draft_id, ("no_reply",), "pending")
+    return {"draft": draft}
 
 
 @app.get("/api/health")

@@ -52,6 +52,13 @@ def init_db():
         conn.execute("ALTER TABLE users ADD COLUMN profile TEXT")
     if "appraisal_row" not in cols:
         conn.execute("ALTER TABLE users ADD COLUMN appraisal_row INTEGER")
+    dcols = [r[1] for r in conn.execute("PRAGMA table_info(drafts)").fetchall()]
+    if "status" not in dcols:
+        # pending=承認待ち / sending=送信中 / sent=送信済み / skipped=送らない
+        # no_reply=AIが返信不要と判定 / replaced=新しい返信案に置き換え / manual=画面で手動生成
+        conn.execute("ALTER TABLE drafts ADD COLUMN status TEXT DEFAULT 'manual'")
+    if "sent_at" not in dcols:
+        conn.execute("ALTER TABLE drafts ADD COLUMN sent_at TEXT")
     mcols = [r[1] for r in conn.execute("PRAGMA table_info(messages)").fetchall()]
     if "elme_message_id" not in mcols:
         conn.execute("ALTER TABLE messages ADD COLUMN elme_message_id INTEGER")
@@ -138,13 +145,76 @@ def set_appraisal_row(user_id: str, row: int):
     conn.close()
 
 
-def save_draft(user_id: str, content: str):
+def save_draft(user_id: str, content: str, status: str = "manual") -> int:
     conn = get_conn()
     now = now_iso()
-    conn.execute(
-        "INSERT INTO drafts (user_id, content, created_at) VALUES (?, ?, ?)",
-        (user_id, content, now),
+    if status in ("pending", "no_reply"):
+        # 同じ人の古い承認待ちは、新しい返信案に置き換える
+        conn.execute(
+            "UPDATE drafts SET status = 'replaced'"
+            " WHERE user_id = ? AND status IN ('pending', 'no_reply')",
+            (user_id,),
+        )
+    cur = conn.execute(
+        "INSERT INTO drafts (user_id, content, created_at, status) VALUES (?, ?, ?, ?)",
+        (user_id, content, now, status),
     )
+    conn.commit()
+    draft_id = cur.lastrowid
+    conn.close()
+    return draft_id
+
+
+def last_inbound_id(user_id: str):
+    conn = get_conn()
+    row = conn.execute(
+        "SELECT MAX(id) AS id FROM messages WHERE user_id = ? AND direction = 'inbound'",
+        (user_id,),
+    ).fetchone()
+    conn.close()
+    return row["id"] if row else None
+
+
+def get_draft(draft_id: int):
+    conn = get_conn()
+    row = conn.execute("SELECT * FROM drafts WHERE id = ?", (draft_id,)).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def list_inbox():
+    """承認待ちと、AIが返信不要と判定したものの一覧（新しい順）。"""
+    conn = get_conn()
+    rows = conn.execute("""
+        SELECT d.id, d.user_id, d.content, d.created_at, d.status,
+               u.display_name, u.call_name, COALESCE(u.account, 'main') AS account
+        FROM drafts d JOIN users u ON u.user_id = d.user_id
+        WHERE d.status IN ('pending', 'no_reply')
+        ORDER BY d.id DESC
+    """).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def claim_draft(draft_id: int, from_status: tuple, to_status: str) -> bool:
+    """状態を切り替える。すでに別の操作で処理済みなら False（二重送信の防止）。"""
+    conn = get_conn()
+    marks = ",".join("?" * len(from_status))
+    sent_at = now_iso() if to_status == "sent" else None
+    cur = conn.execute(
+        f"UPDATE drafts SET status = ?, sent_at = COALESCE(?, sent_at)"
+        f" WHERE id = ? AND status IN ({marks})",
+        (to_status, sent_at, draft_id, *from_status),
+    )
+    conn.commit()
+    ok = cur.rowcount > 0
+    conn.close()
+    return ok
+
+
+def update_draft_content(draft_id: int, content: str):
+    conn = get_conn()
+    conn.execute("UPDATE drafts SET content = ? WHERE id = ?", (content, draft_id))
     conn.commit()
     conn.close()
 
