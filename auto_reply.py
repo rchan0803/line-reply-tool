@@ -3,7 +3,7 @@
 対象は4種類だけ（購入確認→専用LINE案内／専用LINE登録後のヒアリング2通／本鑑定希望への案内／辞退へのお礼）。
 少しでも条件から外れたら送らず、スマホに通知して人の確認に回す。
 
-AUTO_REPLY_MODE: off=動かさない / dry=判定だけ記録して送らない（既定） / on=送信する
+AUTO_REPLY_MODE: off=動かさない（既定） / dry=判定だけ記録して送らない / on=送信する
 """
 import hashlib
 import os
@@ -20,7 +20,7 @@ from claude_service import classify_customer_message
 
 JST = timezone(timedelta(hours=9))
 
-MODE = os.getenv("AUTO_REPLY_MODE", "dry")
+MODE = os.getenv("AUTO_REPLY_MODE", "off")
 DELAY_MIN = int(os.getenv("AUTO_REPLY_DELAY_MIN", "45"))
 JITTER_MIN = 5  # 毎回ぴったり45分にならないよう前後にずらす
 MAX_AGE_HOURS = 18  # 夜間に届いた分を朝に処理できる長さ

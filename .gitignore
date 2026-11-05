@@ -6,3 +6,5 @@ __pycache__/
 *.png
 railway_env.txt
 elme_oauth.json
+auto_local_mailed.json
+auto_local.log
