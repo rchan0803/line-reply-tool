@@ -66,6 +66,16 @@ def init_db():
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_elme_id"
         " ON messages(elme_message_id) WHERE elme_message_id IS NOT NULL"
     )
+    # 自動返信の記録。key が同じものは二度処理しない（二重送信の防止）
+    # status: dry=判定のみ / sending / sent / error / review=人の確認 / ignore / skipped
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS auto_actions (
+            key TEXT PRIMARY KEY,
+            account TEXT, friend_id INTEGER, name TEXT, kind TEXT,
+            status TEXT, reason TEXT, body TEXT, created_at TEXT
+        )
+    """)
+    conn.execute("CREATE TABLE IF NOT EXISTS auto_meta (name TEXT PRIMARY KEY, value TEXT)")
     # 過去のタイムゾーンなし時刻（UTCで保存されていた）に +00:00 を付与
     for table, col in (("messages", "created_at"), ("drafts", "created_at"), ("users", "updated_at")):
         conn.execute(
@@ -281,3 +291,53 @@ def get_user(user_id: str):
     row = conn.execute("SELECT * FROM users WHERE user_id = ?", (user_id,)).fetchone()
     conn.close()
     return dict(row) if row else None
+
+
+def auto_action_exists(key: str) -> bool:
+    conn = get_conn()
+    row = conn.execute("SELECT 1 FROM auto_actions WHERE key = ?", (key,)).fetchone()
+    conn.close()
+    return row is not None
+
+
+def save_auto_action(key: str, account: str, friend_id: int, name: str, kind: str,
+                     status: str, reason: str = "", body: str = "") -> bool:
+    """記録する。すでに同じ key があれば False。"""
+    conn = get_conn()
+    cur = conn.execute(
+        "INSERT OR IGNORE INTO auto_actions"
+        " (key, account, friend_id, name, kind, status, reason, body, created_at)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (key, account, friend_id, name, kind, status, reason, body, now_iso()),
+    )
+    conn.commit()
+    ok = cur.rowcount > 0
+    conn.close()
+    return ok
+
+
+def update_auto_action(key: str, status: str, reason: str):
+    conn = get_conn()
+    conn.execute("UPDATE auto_actions SET status = ?, reason = ? WHERE key = ?", (status, reason, key))
+    conn.commit()
+    conn.close()
+
+
+def list_auto_actions(limit: int = 200) -> list[dict]:
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT * FROM auto_actions WHERE status NOT IN ('skipped', 'ignore')"
+        " ORDER BY created_at DESC LIMIT ?", (limit,)
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def auto_start_at(now_text: str) -> str:
+    """自動返信を始めた時刻。これより前のメッセージは扱わない。"""
+    conn = get_conn()
+    conn.execute("INSERT OR IGNORE INTO auto_meta (name, value) VALUES ('start_at', ?)", (now_text,))
+    conn.commit()
+    row = conn.execute("SELECT value FROM auto_meta WHERE name = 'start_at'").fetchone()
+    conn.close()
+    return row["value"]

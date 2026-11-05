@@ -469,3 +469,100 @@ def read_appraisal(row: int, max_chars: int = 20000) -> str:
             parts.append(f"■{label}\n{v}")
     text = "\n\n".join(parts)
     return text[:max_chars]
+
+
+# ── 自動返信で使うテンプレと購入者の確認 ─────────────────────────
+TEMPLATE_SHEET_ID = os.getenv("GOOGLE_SHEET_ID", "1XYgzOKVnlMy32JKbRyJgO56mS2ZFQyZNLaVxQCdOy-g")
+_TEMPLATE_TTL = 600
+_template_cache = {"at": 0, "main": [], "hearing": []}
+
+
+def _template_rows():
+    import time as _time
+    if _time.time() - _template_cache["at"] > _TEMPLATE_TTL:
+        book = _get_client().open_by_key(TEMPLATE_SHEET_ID)
+        _template_cache["main"] = book.worksheet("公式LINE").get_all_values()
+        _template_cache["hearing"] = book.worksheet("相談内容ヒアリング").get_all_values()
+        _template_cache["at"] = _time.time()
+    return _template_cache
+
+
+def _main_template(use: str) -> str:
+    for row in _template_rows()["main"]:
+        if row and row[0].strip() == use:
+            return row[2].replace("\r\n", "\n").strip()
+    return ""
+
+
+def honkantei_template() -> str:
+    return _main_template("有料鑑定案内")
+
+
+def purchase_template() -> str:
+    """シートの例文に入っているお客様の名前を〇〇に戻して返す。"""
+    return _main_template("有料鑑定購入後専用LINE案内").replace("亜紀代", "〇〇")
+
+
+def decline_template() -> str:
+    """絵文字は1通に1つまでなので、✨は外す。"""
+    return _main_template("本鑑定案内後の辞退").replace("承知しました。", "承知いたしました。").replace("✨", "。")
+
+
+def hearing_templates() -> dict:
+    rows = _template_rows()["hearing"]
+
+    def clean(row, col):
+        return row[col].replace("\r\n", "\n").strip() if len(row) > col else ""
+
+    return {
+        "ライト": (clean(rows[1], 0), clean(rows[2], 0)),
+        "スタンダード": (clean(rows[1], 1), clean(rows[2], 1)),
+    }
+
+
+def _split_name(row: list) -> str:
+    """オーダーの姓名から名を取り出す（姓名が1列に入っている行もある）。"""
+    first = (row[3] if len(row) > 3 else "").strip()
+    if first:
+        return first
+    parts = (row[2] if len(row) > 2 else "").split()
+    return parts[-1] if len(parts) >= 2 else ""
+
+
+def recent_buyers(names: list[str], text: str = "", days: int = 30) -> list[dict]:
+    """専用LINEの方に当たる購入者リストの行。LINE名か顧客名の完全一致だけを見る。"""
+    keys = {re.sub(r"\s", "", n) for n in names if n}
+    plain = re.sub(r"\s", "", text or "")
+    values = _buyer_ws().get_values(f"A{BUYER_HEADER_ROW + 1}:K")
+    orders = {str(r[0]): r for r in _load_orders() if r}
+    since = (datetime.now(JST) - timedelta(days=days)).strftime("%Y/%m/%d")
+    all_rows = [
+        (re.sub(r"\s", "", r[1]) if len(r) > 1 else "", re.sub(r"\s", "", r[2]) if len(r) > 2 else "", r)
+        for r in values
+    ]
+    out = []
+    for line, customer, row in all_rows:
+        order = orders.get(row[6].strip() if len(row) > 6 else "")
+        if not order or (order[1] or "")[:10] < since:
+            continue
+        if not (line in keys or customer in keys or (len(customer) >= 3 and customer in plain)):
+            continue
+        out.append({
+            "コース": row[7].strip() if len(row) > 7 else "",
+            "名": _split_name(order),
+            "有効": (order[5] if len(order) > 5 else "") in VALID_ORDER_STATUS,
+            "鑑定書送付済み": bool(row[10].strip()) if len(row) > 10 else False,
+            "リピーター": sum(1 for _, c, _r in all_rows if c and c == customer) > 1,
+        })
+    return out
+
+
+def buyer_has_other_order(order: dict) -> bool:
+    """同じ顧客名で、別の注文番号の行が購入者リストにあるか。"""
+    name = re.sub(r"\s", "", order.get("氏名") or "")
+    for row in _buyer_ws().get_values(f"A{BUYER_HEADER_ROW + 1}:G"):
+        customer = re.sub(r"\s", "", row[2]) if len(row) > 2 else ""
+        order_no = row[6].strip() if len(row) > 6 else ""
+        if customer == name and order_no != str(order.get("注文番号")):
+            return True
+    return False

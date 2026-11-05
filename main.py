@@ -20,13 +20,14 @@ from database import (
     get_conversations, get_messages, get_latest_draft, get_user,
     search_conversations, set_call_name, set_appraisal_row,
     last_inbound_id, get_draft, list_inbox, claim_draft, update_draft_content,
-    set_elme_friend,
+    set_elme_friend, list_auto_actions,
 )
 from sheets import load_manuals, get_manual_content
 from claude_service import generate_reply, refine_reply
 import elme_mcp
 import elme_sync
 import sheets_sync
+import auto_reply
 
 TEMPLATES = Jinja2Templates(directory="templates")
 
@@ -98,6 +99,20 @@ async def order_import_loop():
         await asyncio.sleep(1500)
 
 
+async def auto_reply_loop():
+    """1時間ごとに、受信から約45分たった定型のメッセージを処理する。"""
+    import asyncio
+    await asyncio.sleep(210)  # ほかの同期とずらす
+    while True:
+        try:
+            result = await asyncio.to_thread(auto_reply.run_once, ACCOUNTS)
+            if result.get("done"):
+                print(f"[auto] {result}")
+        except Exception as e:
+            print(f"[auto] エラー: {e}")
+        await asyncio.sleep(3600)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     import asyncio
@@ -105,9 +120,11 @@ async def lifespan(app: FastAPI):
     load_manuals(ACCOUNT_SHEETS)
     task = asyncio.create_task(form_sync_loop())
     task2 = asyncio.create_task(order_import_loop())
+    task3 = asyncio.create_task(auto_reply_loop())
     yield
     task.cancel()
     task2.cancel()
+    task3.cancel()
 
 
 app = FastAPI(lifespan=lifespan)
@@ -380,6 +397,7 @@ async def process_webhook(account_id: str, request: Request):
 
 # ─── 自動の返信案づくり → 承認待ち → スマホ通知 ──────────────────────
 DRAFT_DELAY_SEC = int(os.getenv("DRAFT_DELAY_SEC", "90"))
+AUTO_DRAFT_ENABLED = os.getenv("AUTO_DRAFT_ENABLED", "0") == "1"  # 全メッセージの返信案づくり（既定は止める）
 NTFY_SERVER = os.getenv("NTFY_SERVER", "https://ntfy.sh").rstrip("/")
 NTFY_TOPIC = os.getenv("NTFY_TOPIC", "")
 PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "").rstrip("/")
@@ -423,6 +441,8 @@ async def notify_phone(user_id: str, account_id: str):
 
 
 async def draft_after_quiet(user_id: str, account_id: str, msg_id):
+    if not AUTO_DRAFT_ENABLED:
+        return
     await asyncio.sleep(DRAFT_DELAY_SEC)
     if last_inbound_id(user_id) != msg_id:
         return  # あとから届いたメッセージの側でまとめて作る
@@ -786,6 +806,16 @@ async def inbox_page(request: Request):
     return TEMPLATES.TemplateResponse(request, "inbox.html")
 
 
+@app.get("/auto", response_class=HTMLResponse)
+async def auto_page(request: Request):
+    return TEMPLATES.TemplateResponse(request, "auto.html")
+
+
+@app.get("/api/auto/log")
+async def api_auto_log():
+    return {"mode": auto_reply.MODE, "items": list_auto_actions()}
+
+
 def _recent_inbound(user_id: str) -> list[dict]:
     """前回こちらが送ったあとに届いたメッセージ（返信の対象）。"""
     out = []
@@ -828,7 +858,7 @@ def send_via_elme(user_id: str, text: str):
             raise HTTPException(status_code=404, detail="エルメでこのお客様が見つかりませんでした")
         set_elme_friend(user_id, friend_id)
     elme_mcp.call_tool_json("send_message", {
-        "bot_id": bot_id, "lmessage_friend_id": int(friend_id), "content": text,
+        "bot_id": bot_id, "lmessage_friend_id": int(friend_id), "content": text, "text": text,
     })
     # 送った文をエルメから取り込む（取り込めなければ手元に記録）
     if try_elme_sync(user_id, account).get("status") != "ok":

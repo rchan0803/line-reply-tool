@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>自動返信の記録</title>
+<style>
+  body { margin: 0; padding: 16px; background: #f6f5f2; color: #2b2b2b; font: 15px/1.6 sans-serif; }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  #mode { color: #666; font-size: 13px; margin-bottom: 16px; }
+  .item { background: #fff; border-radius: 10px; padding: 12px; margin-bottom: 10px; }
+  .head { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+  .name { font-weight: 700; }
+  .tag { font-size: 12px; padding: 1px 8px; border-radius: 999px; background: #eee; }
+  .review, .error { background: #fde8e4; color: #a33; }
+  .sent { background: #e3f4e6; color: #27713a; }
+  .dry { background: #e6eefb; color: #2a5599; }
+  .reason { font-size: 13px; color: #555; }
+  details { margin-top: 6px; }
+  pre { white-space: pre-wrap; word-break: break-word; font: inherit; font-size: 13px; margin: 6px 0 0; }
+</style>
+</head>
+<body>
+<h1>自動返信の記録</h1>
+<div id="mode"></div>
+<div id="list"></div>
+<script>
+const LABEL = { dry: '送らず記録', sending: '送信中', sent: '送信済み', error: '送信エラー', review: '確認が必要' };
+const KIND = { purchase: '購入確認', hearing: 'ヒアリング', honkantei: '本鑑定案内', decline: '辞退へのお礼' };
+function add(parent, tag, cls, text) {
+  const el = document.createElement(tag);
+  if (cls) el.className = cls;
+  el.textContent = text;
+  parent.appendChild(el);
+  return el;
+}
+fetch('/api/auto/log').then(r => r.json()).then(data => {
+  document.getElementById('mode').textContent = '現在の設定：' + ({ off: '停止', dry: '送らず記録', on: '送信する' }[data.mode] || data.mode);
+  const list = document.getElementById('list');
+  if (!data.items.length) add(list, 'p', '', 'まだ記録はありません。');
+  for (const it of data.items) {
+    const box = add(list, 'div', 'item', '');
+    const head = add(box, 'div', 'head', '');
+    add(head, 'span', 'name', it.name);
+    add(head, 'span', 'tag ' + it.status, LABEL[it.status] || it.status);
+    if (it.kind) add(head, 'span', 'tag', KIND[it.kind] || it.kind);
+    add(box, 'div', 'reason', new Date(it.created_at).toLocaleString('ja-JP') + '　' + (it.reason || ''));
+    if (it.body) {
+      const d = add(box, 'details', '', '');
+      add(d, 'summary', '', '文面を見る');
+      add(d, 'pre', '', it.body);
+    }
+  }
+});
+</script>
+</body>
+</html>
